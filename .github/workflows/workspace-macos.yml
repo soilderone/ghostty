@@ -1,0 +1,56 @@
+name: Workspace macOS
+
+on:
+  push: {}
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workspace:
+    if: github.repository != 'ghostty-org/ghostty'
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: DeterminateSystems/nix-installer-action@c5a866b6ab867e88becbed4467b93592bce69f8a # v21
+        with:
+          determinate: true
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app
+          xcodebuild -version
+      - name: Resolve pinned dependencies
+        id: dependencies
+        run: |
+          nix build --accept-flake-config -L .#deps
+          echo "path=$(readlink ./result)" >> "$GITHUB_OUTPUT"
+          echo "nu=$(nix develop --accept-flake-config -c which nu)" >> "$GITHUB_OUTPUT"
+      - name: Swift lint
+        run: nix develop --accept-flake-config -c swiftlint lint --strict
+      - name: Build GhosttyKit
+        run: nix develop --accept-flake-config -c zig build --system '${{ steps.dependencies.outputs.path }}' -Demit-macos-app=false
+      - name: Unit and OpenSSH SFTP integration tests
+        run: '${{ steps.dependencies.outputs.nu }} macos/build.nu --configuration Debug --action test --adhoc'
+      - name: SSH connection reuse smoke test
+        run: bash .github/scripts/workspace-ssh-smoke.sh
+      - name: Build preview app
+        run: '${{ steps.dependencies.outputs.nu }} macos/build.nu --configuration ReleaseLocal --adhoc'
+      - name: Package preview
+        run: ditto -c -k --sequesterRsrc --keepParent macos/build/ReleaseLocal/Ghostty.app Ghostty-workspace.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Ghostty-workspace-macos
+          path: Ghostty-workspace.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: Workspace-test-results
+          path: ~/Library/Developer/Xcode/DerivedData/Ghostty-*/Logs/Test/*.xcresult
+          if-no-files-found: ignore

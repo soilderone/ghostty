@@ -6,6 +6,8 @@ import GhosttyKit
 
 /// A classic, tabbed terminal experience.
 class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Controller {
+    let workspace = WorkspaceModel()
+
     override var windowNibName: NSNib.Name? {
         let defaultValue = "Terminal"
 
@@ -711,6 +713,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     }
 
     func closeTabImmediately(registerRedo: Bool = true) {
+        guard workspace.confirmClose() else { return }
         guard let window = window else { return }
         guard let tabGroup = window.tabGroup,
                 tabGroup.windows.count > 1 else {
@@ -837,6 +840,8 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// confirmation. This will setup proper undo state so the action can be undone.
     func closeWindowImmediately() {
         guard let window = window else { return }
+        let controllers = (window.tabGroup?.windows ?? [window]).compactMap { $0.windowController as? TerminalController }
+        guard controllers.allSatisfy({ $0.workspace.confirmClose() }) else { return }
 
         cancelPendingInitialPresentation()
 
@@ -1109,7 +1114,11 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
         // Initialize our content view to the SwiftUI root
         let container = TerminalViewContainer {
-            TerminalView(ghostty: ghostty, viewModel: self, delegate: self)
+            TerminalWorkspaceView(model: workspace, connect: { [weak self] profile, restoring in
+                self?.connectWorkspace(profile, restoring: restoring)
+            }) {
+                TerminalView(ghostty: ghostty, viewModel: self, delegate: self)
+            }
         }
 
         // Set the initial content size on the container so that
@@ -1119,6 +1128,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         container.initialContentSize = focusedSurface?.initialSize
 
         window.contentView = container
+        workspace.focus(focusedSurface)
 
         // If we have a default size, we want to apply it.
         if let defaultSize {
@@ -1225,6 +1235,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     }
 
     override func windowWillClose(_ notification: Notification) {
+        workspace.shutdown()
         super.windowWillClose(notification)
         cancelPendingInitialPresentation()
         self.relabelTabs()
@@ -1474,10 +1485,40 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         ghostty.toggleTerminalInspector(surface: surface)
     }
 
+    func connectWorkspace(_ profile: WorkspaceSSHProfile, restoring: WorkspaceLocation? = nil) {
+        do {
+            guard !workspace.busy else {
+                throw WorkspaceError.message("Wait for the file operation to finish before reconnecting.")
+            }
+            let session = try WorkspaceSSHSession(profile)
+            var config = Ghostty.SurfaceConfiguration()
+            config.command = try profile.command(socket: session.socket)
+            config.environmentVariables["TERM"] = "xterm-256color"
+            config.waitAfterCommand = true
+            guard let controller = Self.newTab(ghostty, from: window, withBaseConfig: config),
+                  let surface = controller.surfaceTree.first else {
+                session.stop()
+                return
+            }
+            if let restoring {
+                controller.workspace.adopt(workspace.detachDocuments(for: restoring))
+            }
+            controller.workspace.attach(session, surface: surface, restoring: restoring)
+        } catch {
+            workspace.error = error.localizedDescription
+        }
+    }
+
+    override func pwdDidChange(to url: URL?) {
+        super.pwdDidChange(to: url)
+        workspace.pwdChanged(url?.path)
+    }
+
     // MARK: - TerminalViewDelegate
 
     override func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {
         super.focusedSurfaceDidChange(to: to)
+        workspace.focus(to)
 
         // We always cancel our event listener
         surfaceAppearanceCancellables.removeAll()

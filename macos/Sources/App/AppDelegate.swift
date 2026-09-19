@@ -389,6 +389,11 @@ class AppDelegate: NSObject,
         let windows = NSApplication.shared.windows
         if windows.isEmpty { return .terminateNow }
 
+        // Editor documents need protection even when no terminal process is running,
+        // and before an updater or logout bypasses terminal process confirmation.
+        let workspaces = windows.compactMap { ($0.windowController as? TerminalController)?.workspace }
+        guard workspaces.allSatisfy({ $0.confirmClose() }) else { return .terminateCancel }
+
         // If we've already accepted to install an update, then we don't need to
         // confirm quit. The user is already expecting the update to happen.
         if updateController.shouldTerminateWithoutWarning {
@@ -420,6 +425,9 @@ class AppDelegate: NSObject,
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        for window in NSApp.windows {
+            (window.windowController as? TerminalController)?.workspace.shutdown()
+        }
         // We have no notifications we want to persist after death,
         // so remove them all now. In the future we may want to be
         // more selective and only remove surface-targeted notifications.

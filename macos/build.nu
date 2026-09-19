@@ -6,6 +6,7 @@
 def main [
     --scheme: string = "Ghostty"       # Xcode scheme (Ghostty, DockTilePlugin)
     --configuration: string = "Debug"  # Build configuration (Debug, Release, ReleaseLocal)
+    --adhoc # Use ad-hoc signing for fork CI without a developer account.
     --action: string = "build"         # xcodebuild action (build, test, clean, etc.)
 ] {
     let project = ($env.FILE_PWD | path join "Ghostty.xcodeproj")
@@ -19,6 +20,12 @@ def main [
         []
     }
 
+    let signing = if $adhoc {
+        ["CODE_SIGN_IDENTITY=-" "CODE_SIGN_STYLE=Manual" "DEVELOPMENT_TEAM="]
+    } else {
+        []
+    }
+
     (^env -i
         $"HOME=($env.HOME)"
         "PATH=/usr/bin:/bin:/usr/sbin:/sbin"
@@ -28,5 +35,6 @@ def main [
         -configuration $configuration
         $"SYMROOT=($build_dir)"
         ...$skip_testing
+        ...$signing
         $action)
 }
