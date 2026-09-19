@@ -154,9 +154,12 @@ actor RemoteWorkspaceFiles: WorkspaceFileService {
         framed.data.append(packet.data)
         let descriptor = input.fileHandleForWriting.fileDescriptor
         var offset = 0
+        let deadline = Date().addingTimeInterval(15)
         while offset < framed.data.count {
             var state = pollfd(fd: descriptor, events: Int16(POLLOUT), revents: 0)
-            let ready = Darwin.poll(&state, 1, 15_000)
+            let remaining = max(0, Int32(deadline.timeIntervalSinceNow * 1000))
+            guard remaining > 0 else { throw WorkspaceError.message("SFTP write timed out.") }
+            let ready = Darwin.poll(&state, 1, remaining)
             if ready < 0, errno == EINTR { continue }
             guard ready > 0 else { throw WorkspaceError.message("SFTP write timed out.") }
             let written = framed.data.withUnsafeBytes { buffer -> Int in
@@ -172,10 +175,12 @@ actor RemoteWorkspaceFiles: WorkspaceFileService {
     private func exact(_ count: Int) throws -> Data {
         var result = Data()
         let descriptor = output.fileHandleForReading.fileDescriptor
+        let deadline = Date().addingTimeInterval(15)
         while result.count < count {
             // Drain an in-flight packet even after cancellation, keeping framing valid.
             var state = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
-            let ready = Darwin.poll(&state, 1, 15_000)
+            let remaining = max(0, Int32(deadline.timeIntervalSinceNow * 1000))
+            let ready = remaining > 0 ? Darwin.poll(&state, 1, remaining) : 0
             if ready < 0, errno == EINTR { continue }
             guard ready > 0 else {
                 disconnect()
@@ -278,7 +283,7 @@ actor RemoteWorkspaceFiles: WorkspaceFileService {
                 return files
             }
             let count = try reply.readUInt32()
-            guard count <= 16384 else { throw WorkspaceError.message("Invalid directory response.") }
+            guard count > 0, count <= 16384 else { throw WorkspaceError.message("Invalid directory response.") }
             for _ in 0..<count {
                 let name = try reply.readString()
                 _ = try reply.readString() // v3 longname is display text, never parsed.
@@ -431,17 +436,18 @@ actor RemoteWorkspaceFiles: WorkspaceFileService {
         defer { try? FileManager.default.removeItem(at: temp) }
         let output = try FileHandle(forWritingTo: temp)
         defer { try? output.close() }
+        var reporter = WorkspaceTransferProgress(progress)
         var offset: UInt64 = 0
         while true {
             let part = try chunk(handle, offset: offset)
             if part.isEmpty { break }
             try output.write(contentsOf: part)
             offset += UInt64(part.count)
-            progress(min(1, Double(offset) / Double(max(1, size))))
+            reporter.report(Double(offset) / Double(max(1, size)))
         }
         try Task.checkCancellation()
         try FileManager.default.moveItem(at: temp, to: url)
-        progress(1)
+        reporter.report(1)
     }
 
     func upload(_ url: URL, to path: String, progress: @Sendable @escaping (Double) -> Void) throws {
@@ -458,15 +464,16 @@ actor RemoteWorkspaceFiles: WorkspaceFileService {
             if !handleClosed { close(handle) }
             unlinkTemporary(temp)
         }
+        var reporter = WorkspaceTransferProgress(progress)
         var offset: UInt64 = 0
         while let data = try input.read(upToCount: 32768), !data.isEmpty {
             try write(data, handle: handle, offset: offset)
             offset += UInt64(data.count)
-            progress(min(1, Double(offset) / Double(max(1, size))))
+            reporter.report(Double(offset) / Double(max(1, size)))
         }
         _ = try response(4, expecting: 101) { $0.bytes(handle) }
         handleClosed = true
         try rename(temp, to: path)
-        progress(1)
+        reporter.report(1)
     }
 }

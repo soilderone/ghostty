@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 struct WorkspaceFile: Identifiable, Sendable {
     var id: String { path }
@@ -52,6 +53,21 @@ enum WorkspacePath {
     }
 }
 
+/// Limit UI notifications while transferring large files.
+struct WorkspaceTransferProgress {
+    let callback: @Sendable (Double) -> Void
+    private var lastUpdate = Date.distantPast
+
+    init(_ callback: @Sendable @escaping (Double) -> Void) { self.callback = callback }
+
+    mutating func report(_ value: Double) {
+        let now = Date()
+        guard value >= 1 || now.timeIntervalSince(lastUpdate) >= 0.1 else { return }
+        lastUpdate = now
+        callback(min(1, max(0, value)))
+    }
+}
+
 actor LocalWorkspaceFiles: WorkspaceFileService {
     private let manager = FileManager.default
 
@@ -90,10 +106,25 @@ actor LocalWorkspaceFiles: WorkspaceFileService {
                 throw WorkspaceError.conflict
             }
         }
+        try Task.checkCancellation()
         let attributes = try? manager.attributesOfItem(atPath: target)
-        try data.write(to: URL(fileURLWithPath: target), options: .atomic)
-        if let permissions = attributes?[.posixPermissions] {
-            try manager.setAttributes([.posixPermissions: permissions], ofItemAtPath: target)
+        let destination = URL(fileURLWithPath: target)
+        let temporary = destination.deletingLastPathComponent().appendingPathComponent(".ghostty-\(UUID().uuidString)")
+        try data.write(to: temporary, options: .withoutOverwriting)
+        defer { try? manager.removeItem(at: temporary) }
+        try manager.setAttributes([.posixPermissions: attributes?[.posixPermissions] ?? 0o600], ofItemAtPath: temporary.path)
+        try Task.checkCancellation()
+        if let original, !overwrite {
+            guard try read(target) == original else { throw WorkspaceError.conflict }
+        }
+        if original == nil, !overwrite {
+            // moveItem refuses an existing destination even if it appeared after
+            // the preflight check, so Save Copy never overwrites a racing writer.
+            try manager.moveItem(at: temporary, to: destination)
+        } else {
+            guard Darwin.rename(temporary.path, target) == 0 else {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+            }
         }
     }
 
@@ -110,7 +141,8 @@ actor LocalWorkspaceFiles: WorkspaceFileService {
     }
 
     func remove(_ path: String, directory: Bool) throws {
-        if directory, !(try manager.contentsOfDirectory(atPath: path)).isEmpty {
+        let kind = try manager.attributesOfItem(atPath: path)[.type] as? FileAttributeType
+        if directory, kind != .typeSymbolicLink, !(try manager.contentsOfDirectory(atPath: path)).isEmpty {
             throw WorkspaceError.message("Only empty folders can be deleted in this version.")
         }
         try manager.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil)
@@ -124,7 +156,7 @@ actor LocalWorkspaceFiles: WorkspaceFileService {
         try copy(url, to: URL(fileURLWithPath: path), progress: progress)
     }
 
-    private func copy(_ source: URL, to destination: URL, progress: @Sendable (Double) -> Void) throws {
+    private func copy(_ source: URL, to destination: URL, progress: @Sendable @escaping (Double) -> Void) throws {
         let values = try source.resolvingSymlinksInPath().resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
         guard values.isRegularFile == true else { throw WorkspaceError.message("Only regular files can be transferred.") }
         let size = values.fileSize ?? 0
@@ -139,15 +171,16 @@ actor LocalWorkspaceFiles: WorkspaceFileService {
             try? input.close()
             try? output.close()
         }
+        var reporter = WorkspaceTransferProgress(progress)
         var count = 0
         while let chunk = try input.read(upToCount: 64 * 1024), !chunk.isEmpty {
             try Task.checkCancellation()
             try output.write(contentsOf: chunk)
             count += chunk.count
-            progress(Double(count) / Double(max(1, size)))
+            reporter.report(Double(count) / Double(max(1, size)))
         }
         try Task.checkCancellation()
         try manager.moveItem(at: temporary, to: destination)
-        progress(1)
+        reporter.report(1)
     }
 }

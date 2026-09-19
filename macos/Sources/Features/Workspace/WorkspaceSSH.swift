@@ -33,7 +33,9 @@ struct WorkspaceSSHProfile: Codable, Identifiable, Equatable {
         if !user.isEmpty { args += ["-l", user] }
         if !identityFile.isEmpty { args += ["-i", (identityFile as NSString).expandingTildeInPath] }
         args += ["--", host]
-        return "shell:exec " + args.map(Self.quote).joined(separator: " ")
+        // SurfaceConfiguration.command is already interpreted as a shell command
+        // by apprt/embedded.zig; config-file prefixes such as "shell:" are not used.
+        return "exec " + args.map(Self.quote).joined(separator: " ")
     }
 }
 
@@ -48,8 +50,11 @@ final class WorkspaceSSHStore: ObservableObject {
         url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("com.mitchellh.ghostty/workspace/ssh.json")
         if FileManager.default.fileExists(atPath: url.path) {
-            do { profiles = try JSONDecoder().decode([WorkspaceSSHProfile].self, from: Data(contentsOf: url)) }
-            catch { self.error = "Could not read SSH profiles: \(error.localizedDescription)" }
+            do {
+                profiles = try JSONDecoder().decode([WorkspaceSSHProfile].self, from: Data(contentsOf: url))
+            } catch {
+                self.error = "Could not read SSH profiles: \(error.localizedDescription)"
+            }
         }
     }
 

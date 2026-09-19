@@ -23,7 +23,11 @@ final class WorkspaceDocument: ObservableObject, Identifiable {
     let location: WorkspaceLocation
     var path: String
     var original: Data
-    @Published var text: String
+    @Published var text: String {
+        didSet { dirty = text != savedText }
+    }
+    @Published private(set) var dirty = false
+    private var savedText = ""
     @Published var saving = false
     private var hasBOM = false
     private var usesCRLF = false
@@ -32,7 +36,6 @@ final class WorkspaceDocument: ObservableObject, Identifiable {
             .replacingOccurrences(of: "\n", with: "\r\n") : text
         return (hasBOM ? Data([0xef, 0xbb, 0xbf]) : Data()) + Data(normalized.utf8)
     }
-    var dirty: Bool { encodedText != original }
     var title: String { (path as NSString).lastPathComponent }
 
     init(location: WorkspaceLocation, path: String, data: Data) throws {
@@ -47,8 +50,18 @@ final class WorkspaceDocument: ObservableObject, Identifiable {
         let decoded = try WorkspacePath.text(data)
         hasBOM = data.starts(with: [0xef, 0xbb, 0xbf])
         usesCRLF = decoded.contains("\r\n") && !decoded.replacingOccurrences(of: "\r\n", with: "").contains("\n")
-        text = decoded.hasPrefix("\u{feff}") ? String(decoded.dropFirst()) : decoded
+        let content = decoded.hasPrefix("\u{feff}") ? String(decoded.dropFirst()) : decoded
+        savedText = usesCRLF ? content.replacingOccurrences(of: "\r\n", with: "\n") : content
+        text = savedText
         original = data
+    }
+
+    func markSaved(_ data: Data) throws {
+        let decoded = try WorkspacePath.text(data)
+        let content = decoded.hasPrefix("\u{feff}") ? String(decoded.dropFirst()) : decoded
+        savedText = usesCRLF ? content.replacingOccurrences(of: "\r\n", with: "\n") : content
+        original = data
+        dirty = text != savedText
     }
 }
 
@@ -74,7 +87,6 @@ final class WorkspaceModel: ObservableObject {
     private var operation: Task<Void, Never>?
     private var authentication: Task<Void, Never>?
     private var generation = UUID()
-    private var activeSurface: UUID?
     private var lastPwd: String?
     private var subscriptions: [UUID: AnyCancellable] = [:]
     private var closing = false
@@ -84,7 +96,6 @@ final class WorkspaceModel: ObservableObject {
 
     func focus(_ surface: Ghostty.SurfaceView?) {
         guard let surface else { return }
-        activeSurface = surface.id
         lastPwd = surface.pwd
         if locations[surface.id] == nil {
             locations[surface.id] = WorkspaceLocation(path: surface.pwd ?? FileManager.default.homeDirectoryForCurrentUser.path)
@@ -115,7 +126,6 @@ final class WorkspaceModel: ObservableObject {
         target.follow = false
         locations[surface.id] = target
         location = target
-        activeSurface = surface.id
         visible = true
         section = "Files"
         following = false
@@ -151,8 +161,14 @@ final class WorkspaceModel: ObservableObject {
     func detachDocuments(for target: WorkspaceLocation) -> [WorkspaceDocument] {
         let result = documents.filter { $0.location === target }
         let previous = WorkspaceLocation(path: target.path, session: target.session)
-        for key in locations.keys where locations[key] === target { locations[key] = previous }
-        if location === target { location = previous }
+        for key in Array(locations.keys) where locations[key] === target { locations[key] = previous }
+        if location === target {
+            listing?.cancel()
+            generation = UUID()
+            location = previous
+            entries = []
+            status = "Connection moved to a new tab."
+        }
         documents.removeAll { $0.location === target }
         for doc in result { subscriptions.removeValue(forKey: doc.id) }
         selectedDocument = documents.first?.id
@@ -232,7 +248,10 @@ final class WorkspaceModel: ObservableObject {
                 self?.progress = nil
                 self?.busy = false
             }
-            do { try await action() } catch is CancellationError {
+            do {
+                try Task.checkCancellation()
+                try await action()
+            } catch is CancellationError {
                 self?.status = "Operation cancelled."
             } catch { if self?.closing != true { self?.error = error.localizedDescription } }
         }
@@ -254,10 +273,12 @@ final class WorkspaceModel: ObservableObject {
                 try await doc.location.service.save(copyPath ?? doc.path, data: snapshot,
                                                     original: copyPath == nil ? doc.original : nil, overwrite: overwrite)
                 if let copyPath { doc.path = copyPath }
-                doc.original = snapshot
-                doc.objectWillChange.send()
+                try doc.markSaved(snapshot)
                 self.refresh()
             } catch WorkspaceError.conflict {
+                if copyPath != nil {
+                    throw WorkspaceError.message("The copy destination already exists. Choose a new path.")
+                }
                 let alert = NSAlert()
                 alert.messageText = "File changed on disk"
                 alert.informativeText = "Your edits are still here. Reload discards them; overwrite replaces the current file."
@@ -270,8 +291,7 @@ final class WorkspaceModel: ObservableObject {
                     try doc.reload(data)
                 } else if choice == .alertThirdButtonReturn {
                     try await doc.location.service.save(doc.path, data: snapshot, original: nil, overwrite: true)
-                    doc.original = snapshot
-                    doc.objectWillChange.send()
+                    try doc.markSaved(snapshot)
                 }
             }
         }

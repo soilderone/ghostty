@@ -28,12 +28,32 @@ struct WorkspaceTests {
         #expect(!doc.dirty)
     }
 
+    @Test @MainActor func editsMadeDuringSaveRemainDirty() throws {
+        let doc = try WorkspaceDocument(location: WorkspaceLocation(), path: "/test", data: Data("one".utf8))
+        doc.text = "two"
+        let pendingSave = doc.encodedText
+        doc.text = "three"
+        try doc.markSaved(pendingSave)
+        #expect(doc.dirty)
+        #expect(doc.text == "three")
+        doc.text = "two"
+        #expect(!doc.dirty)
+    }
+
+    @Test @MainActor func mixedNewlinesRoundTripWithoutChanges() throws {
+        let data = Data("one\r\ntwo\nthree\r\n".utf8)
+        let doc = try WorkspaceDocument(location: WorkspaceLocation(), path: "/test", data: data)
+        #expect(!doc.dirty)
+        #expect(doc.encodedText == data)
+    }
+
     @Test func sshArgumentsCannotBecomeShellCommands() throws {
         var profile = WorkspaceSSHProfile()
         profile.host = "my-alias"
         profile.identityFile = "/tmp/a'$(touch injected)"
         let command = try profile.command(socket: "/tmp/socket")
         #expect(command.contains("'/tmp/a'\\''$(touch injected)'"))
+        #expect(command.hasPrefix("exec "))
         #expect(command.hasSuffix("'--' 'my-alias'"))
         profile.host = "-oProxyCommand=bad"
         #expect(throws: (any Error).self) { try profile.validate() }

@@ -46,7 +46,7 @@ private struct WorkspaceTextEditor: NSViewRepresentable {
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true
-        let editor = WorkspaceTextView()
+        let editor = WorkspaceTextView(frame: NSRect(x: 0, y: 0, width: 300, height: 180))
         editor.isRichText = false
         editor.importsGraphics = false
         editor.allowsUndo = true
@@ -63,7 +63,7 @@ private struct WorkspaceTextEditor: NSViewRepresentable {
         editor.autoresizingMask = [.width]
         editor.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         editor.textContainer?.widthTracksTextView = false
-        editor.minSize = NSSize(width: 0, height: 0)
+        editor.minSize = NSSize(width: 180, height: 120)
         editor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         editor.delegate = context.coordinator
         editor.string = text
