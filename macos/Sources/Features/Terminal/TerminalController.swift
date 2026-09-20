@@ -1116,9 +1116,9 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         let container = TerminalViewContainer {
             TerminalWorkspaceView(model: workspace, connect: { [weak self] profile, restoring in
                 self?.connectWorkspace(profile, restoring: restoring)
-            }) {
+            }, terminal: {
                 TerminalView(ghostty: ghostty, viewModel: self, delegate: self)
-            }
+            })
         }
 
         // Set the initial content size on the container so that

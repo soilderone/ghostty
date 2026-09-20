@@ -332,8 +332,8 @@ final class WorkspaceModel: ObservableObject {
         operation?.cancel()
         authentication?.cancel()
         var stopped = Set<UUID>()
-        for target in Array(locations.values) + documents.map(\.location) {
-            if stopped.insert(target.id).inserted { target.session?.stop() }
+        for target in Array(locations.values) + documents.map(\.location) where stopped.insert(target.id).inserted {
+            target.session?.stop()
         }
     }
 }

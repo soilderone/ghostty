@@ -25,8 +25,11 @@ struct TerminalWorkspaceView<Content: View>: View {
                 }
                 Spacer()
                 if model.busy {
-                    if let progress = model.progress { ProgressView(value: progress).frame(width: 90) }
-                    else { ProgressView().controlSize(.small) }
+                    if let progress = model.progress {
+                        ProgressView(value: progress).frame(width: 90)
+                    } else {
+                        ProgressView().controlSize(.small)
+                    }
                     Button("Cancel", action: model.cancelOperation)
                 }
             }
