@@ -1117,7 +1117,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             TerminalWorkspaceView(model: workspace, connect: { [weak self] profile, restoring in
                 self?.connectWorkspace(profile, restoring: restoring)
             }, terminal: {
-                TerminalView(ghostty: ghostty, viewModel: self, delegate: self)
+                TerminalView(ghostty: self.ghostty, viewModel: self, delegate: self)
             })
         }
 
