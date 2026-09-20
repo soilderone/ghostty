@@ -36,17 +36,61 @@ awk -v address="[127.0.0.1]:$port" '{print address, $1, $2}' "$fixture/host.pub"
   -p "$port" "$(id -un)@127.0.0.1"
 /usr/bin/ssh -F /dev/null -S "$fixture/control" -O check 127.0.0.1
 # Once authenticated, Files' restricted slave needs neither credentials nor config.
-printf '\000\000\000\005\001\000\000\000\003' | \
-  /usr/bin/ssh -F /dev/null -S "$fixture/control" -o BatchMode=yes \
-  -o ProxyCommand=/usr/bin/false -T -s -- 127.0.0.1 sftp > "$fixture/version"
-python3 - "$fixture/version" <<'PY'
-import pathlib
+python3 - "$fixture/control" <<'PY'
+import os
+import select
 import struct
+import subprocess
 import sys
-packet = pathlib.Path(sys.argv[1]).read_bytes()
-assert len(packet) >= 9
-length, kind, version = struct.unpack('>IBI', packet[:9])
-assert kind == 2 and version == 3 and len(packet) == length + 4
+import time
+
+process = subprocess.Popen([
+    '/usr/bin/ssh', '-F', '/dev/null', '-S', sys.argv[1],
+    '-o', 'BatchMode=yes', '-o', 'ProxyCommand=/usr/bin/false',
+    '-T', '-s', '--', '127.0.0.1', 'sftp',
+], stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=0)
+
+try:
+    # Keep stdin open until VERSION is received. Sending EOF immediately after
+    # INIT can make sftp-server exit before it flushes its queued response.
+    process.stdin.write(struct.pack('>IBI', 5, 1, 3))
+    process.stdin.flush()
+    deadline = time.monotonic() + 15
+
+    def read_exact(count):
+        data = bytearray()
+        while len(data) < count:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not select.select([process.stdout], [], [], remaining)[0]:
+                raise RuntimeError(f'SFTP handshake timed out after {len(data)}/{count} bytes')
+            chunk = os.read(process.stdout.fileno(), count - len(data))
+            if not chunk:
+                raise RuntimeError(f'SFTP closed before completing its response ({len(data)}/{count} bytes)')
+            data.extend(chunk)
+        return data
+
+    length, = struct.unpack('>I', read_exact(4))
+    if not 5 <= length <= 1024 * 1024:
+        raise RuntimeError(f'Invalid SFTP response length: {length}')
+    packet = read_exact(length)
+    kind, version = struct.unpack('>BI', packet[:5])
+    if kind != 2 or version != 3:
+        raise RuntimeError(f'Expected SFTP VERSION 3, got type={kind}, version={version}')
+    process.stdin.close()
+    result = process.wait(timeout=10)
+    if result != 0:
+        raise RuntimeError(f'SSH subsystem exited with status {result}')
+    print(f'SFTP v3 handshake over the shared SSH connection passed ({length} bytes)')
+finally:
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+    process.stdin.close()
+    process.stdout.close()
 PY
 /usr/bin/ssh -F /dev/null -S "$fixture/control" -O exit 127.0.0.1
 # A disconnected Files channel must fail instead of opening a fresh connection.
