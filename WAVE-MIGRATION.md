@@ -19,7 +19,7 @@ Ghostty fork 里重新实现的功能。目标平台**只有 macOS 版**。
 | P3  | 承载非终端面板                  | 高    | —     |             |
 | 1   | tab 颜色标记                    | 低    | —     | 完成        |
 | 2   | sage 终端配色                   | 低    | —     | CI 构建通过 |
-| 3   | 只在外框透出的毛玻璃            | 低–中 | —     |             |
+| 3   | 只在外框透出的毛玻璃            | 低–中 | —     | 待 CI 验证  |
 | 4   | 界面主题、sage 外壳配色与强调色 | 低–中 | —     |             |
 | 5   | 工具栏（tool rail）             | 低–中 | P3    |             |
 | 6   | 分屏外框与标题栏                | 中    | —     |             |
@@ -94,6 +94,8 @@ Ghostty 已经把每个终端的 pwd（OSC 7）传到了 Swift 层。
 **Wave 参考：** `pkg/wconfig/defaultconfig/termthemes.json`（`default-dark`、`default-light`）。
 
 ### 3. 只在外框透出的毛玻璃 — 低–中
+
+**状态：待 CI 验证。** 配置项 `macos-window-vibrancy`（默认关），见 changelog。
 
 **范围**
 
