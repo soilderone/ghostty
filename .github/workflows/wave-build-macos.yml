@@ -7,6 +7,14 @@ on:
         required: false
         default: ""
 
+  # GitHub only accepts dispatches for workflows it has registered, and a
+  # workflow that isn't on the default branch is only registered once some
+  # event runs it. This push trigger exists solely for that; the build job
+  # is skipped for it, so builds stay manual.
+  push:
+    branches: [feat/wave-migration]
+    paths: [.github/workflows/wave-build-macos.yml]
+
 name: Build macOS (fork)
 run-name: Build macOS ${{ github.ref_name }}
 
@@ -17,6 +25,7 @@ concurrency:
 
 jobs:
   build-macos:
+    if: github.event_name == 'workflow_dispatch'
     # Apple Silicon runner. HACKING.md requires Xcode 26 and the macOS 26 SDK.
     runs-on: macos-26
     timeout-minutes: 90
