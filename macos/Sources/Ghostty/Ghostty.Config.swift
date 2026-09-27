@@ -64,16 +64,16 @@ extension Ghostty {
                 return nil
             }
 
-            // The bundled defaults go first so that everything the user sets,
-            // including `theme`, overrides them.
-            if let defaults = bundledDefaultsPath {
-                ghostty_config_load_file(cfg, defaults)
-            }
-
             // Load our configuration from files, CLI args, and then any referenced files.
             if let path {
                 ghostty_config_load_file(cfg, path)
             } else {
+                // The bundled defaults go first so that everything the user sets,
+                // including `theme`, overrides them. An explicit path (tests,
+                // GHOSTTY_CONFIG_PATH) skips them so it sees upstream defaults.
+                if let defaults = bundledDefaultsPath {
+                    ghostty_config_load_file(cfg, defaults)
+                }
                 ghostty_config_load_default_files(cfg)
             }
 
