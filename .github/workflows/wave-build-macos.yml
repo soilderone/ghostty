@@ -1,0 +1,195 @@
+on:
+  workflow_dispatch:
+    inputs:
+      xcode:
+        description: "Xcode version to select (e.g. 26.6). Empty picks the newest Xcode 26.x on the runner."
+        type: string
+        required: false
+        default: ""
+
+name: Build macOS (fork)
+run-name: Build macOS ${{ github.ref_name }}
+
+# A newer dispatch on the same ref supersedes an older one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-macos:
+    # Apple Silicon runner. HACKING.md requires Xcode 26 and the macOS 26 SDK.
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      # Secrets can't be referenced from `if:` directly, so expose whether
+      # a signing certificate is configured. Without one the app keeps the
+      # ad-hoc ("Sign to Run Locally") signature Xcode gives it.
+      HAS_SIGNING_CERT: ${{ secrets.PROD_MACOS_CERTIFICATE != '' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Important so that build number generation works
+          fetch-depth: 0
+
+      - name: Xcode Select
+        env:
+          XCODE_INPUT: ${{ inputs.xcode }}
+        run: |
+          set -euo pipefail
+          if [ -n "$XCODE_INPUT" ]; then
+            xcode="/Applications/Xcode_${XCODE_INPUT}.app"
+          else
+            xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null \
+              | grep -E '/Xcode_26(\.[0-9]+)*\.app$' \
+              | sort -V | tail -n 1 || true)
+          fi
+          if [ -z "$xcode" ] || [ ! -d "$xcode" ]; then
+            echo "::error::Xcode 26 not found on this runner"
+            ls -d /Applications/Xcode*.app || true
+            exit 1
+          fi
+          sudo xcode-select -s "$xcode"
+
+      - name: Xcode Version
+        run: |
+          xcodebuild -version
+          xcrun --sdk macosx --show-sdk-version
+
+      # Xcode 26 ships the Metal toolchain as a separate component. Our
+      # shaders are compiled with `xcrun metal` during the Zig build.
+      - name: Metal Toolchain
+        run: |
+          if ! xcrun -sdk macosx metal --version >/dev/null 2>&1; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+          xcrun -sdk macosx metal --version
+
+      - name: Install zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+
+      # msgfmt is needed to compile the translations (i18n is on by
+      # default on macOS).
+      - name: Install gettext
+        run: command -v msgfmt || brew install gettext
+
+      - name: Build info
+        id: info
+        run: |
+          echo "build=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          # ReleaseLocal is Release plus the entitlement that lets an
+          # ad-hoc signed, hardened app load its embedded frameworks.
+          if [ "$HAS_SIGNING_CERT" = "true" ]; then
+            echo "configuration=Release" >> "$GITHUB_OUTPUT"
+          else
+            echo "configuration=ReleaseLocal" >> "$GITHUB_OUTPUT"
+          fi
+
+      # GhosttyKit is the framework that is built from Zig for our native
+      # Mac app to access. `native` only builds the runner's arch (arm64).
+      - name: Build GhosttyKit
+        run: zig build -Doptimize=ReleaseFast -Demit-macos-app=false -Dxcframework-target=native
+
+      - name: Build Ghostty.app
+        env:
+          XC_CONFIG: ${{ steps.info.outputs.configuration }}
+        run: |
+          cd macos
+          xcodebuild -target Ghostty -configuration "$XC_CONFIG" -arch arm64
+
+      - name: Update Info.plist
+        env:
+          APP: macos/build/${{ steps.info.outputs.configuration }}/Ghostty.app
+          GHOSTTY_BUILD: ${{ steps.info.outputs.build }}
+          GHOSTTY_COMMIT: ${{ steps.info.outputs.commit }}
+        run: |
+          # SUEnableAutomaticChecks stays false: the update feeds are
+          # upstream's, and updating would replace this fork's build.
+          /usr/libexec/PlistBuddy -c "Set :GhosttyCommit $GHOSTTY_COMMIT" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $GHOSTTY_BUILD" "$APP/Contents/Info.plist"
+
+      # Editing Info.plist invalidated Xcode's signature, so reseal the
+      # bundle with the same ad-hoc identity and entitlements.
+      - name: Ad-hoc sign app bundle
+        if: env.HAS_SIGNING_CERT != 'true'
+        env:
+          APP: macos/build/${{ steps.info.outputs.configuration }}/Ghostty.app
+        run: |
+          /usr/bin/codesign --verbose -f -s - -o runtime \
+            --entitlements macos/GhosttyReleaseLocal.entitlements "$APP"
+
+      - name: Codesign app bundle
+        if: env.HAS_SIGNING_CERT == 'true'
+        env:
+          APP: macos/build/${{ steps.info.outputs.configuration }}/Ghostty.app
+          MACOS_CERTIFICATE: ${{ secrets.PROD_MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.PROD_MACOS_CERTIFICATE_PWD }}
+          MACOS_CERTIFICATE_NAME: ${{ secrets.PROD_MACOS_CERTIFICATE_NAME }}
+          MACOS_CI_KEYCHAIN_PWD: ${{ secrets.PROD_MACOS_CI_KEYCHAIN_PWD }}
+        run: |
+          echo "$MACOS_CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p "$MACOS_CI_KEYCHAIN_PWD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$MACOS_CI_KEYCHAIN_PWD" build.keychain
+          security import certificate.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$MACOS_CI_KEYCHAIN_PWD" build.keychain
+          rm certificate.p12
+
+          sparkle="$APP/Contents/Frameworks/Sparkle.framework"
+          /usr/bin/codesign --verbose -f -s "$MACOS_CERTIFICATE_NAME" -o runtime "$sparkle/Versions/B/XPCServices/Downloader.xpc"
+          /usr/bin/codesign --verbose -f -s "$MACOS_CERTIFICATE_NAME" -o runtime "$sparkle/Versions/B/XPCServices/Installer.xpc"
+          /usr/bin/codesign --verbose -f -s "$MACOS_CERTIFICATE_NAME" -o runtime "$sparkle/Versions/B/Autoupdate"
+          /usr/bin/codesign --verbose -f -s "$MACOS_CERTIFICATE_NAME" -o runtime "$sparkle/Versions/B/Updater.app"
+          /usr/bin/codesign --verbose -f -s "$MACOS_CERTIFICATE_NAME" -o runtime "$sparkle"
+          /usr/bin/codesign --verbose -f -s "$MACOS_CERTIFICATE_NAME" -o runtime "$APP/Contents/PlugIns/DockTilePlugin.plugin"
+          /usr/bin/codesign --verbose -f -s "$MACOS_CERTIFICATE_NAME" -o runtime --entitlements macos/Ghostty.entitlements "$APP"
+
+      - name: Verify signature
+        env:
+          APP: macos/build/${{ steps.info.outputs.configuration }}/Ghostty.app
+        run: |
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP"
+          lipo -archs "$APP/Contents/MacOS/ghostty"
+
+      # upload-artifact drops symlinks and exec bits, which breaks the
+      # frameworks in the bundle, so archive with ditto first.
+      - name: Zip app bundle
+        env:
+          APP: macos/build/${{ steps.info.outputs.configuration }}/Ghostty.app
+          ZIP: Ghostty-macos-arm64-${{ steps.info.outputs.commit }}.zip
+        run: ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+
+      - name: Upload app
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Ghostty-macos-arm64-${{ steps.info.outputs.commit }}
+          path: Ghostty-macos-arm64-${{ steps.info.outputs.commit }}.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Summary
+        env:
+          COMMIT: ${{ steps.info.outputs.commit }}
+        run: |
+          {
+            echo "### Ghostty.app (arm64, $COMMIT)"
+            echo
+            if [ "$HAS_SIGNING_CERT" = "true" ]; then
+              echo "Signed with a Developer ID certificate (not notarized)."
+            else
+              echo "Ad-hoc signed. After unzipping, clear the quarantine flag before the first launch:"
+              echo
+              echo '```sh'
+              echo 'xattr -dr com.apple.quarantine /path/to/Ghostty.app'
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Runs last so a lint failure still leaves an app to test.
+      - name: swiftlint check
+        if: ${{ !cancelled() }}
+        run: |
+          command -v swiftlint || brew install swiftlint
+          swiftlint version
+          swiftlint lint --strict
