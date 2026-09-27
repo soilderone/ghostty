@@ -3499,6 +3499,22 @@ keybind: Keybinds = .{},
 /// The default value is false.
 @"macos-window-vibrancy": bool = false,
 
+/// The accent color of the interface that Ghostty draws itself, such as the
+/// command palette selection, the split drop zones and the surface
+/// highlight. Valid values:
+///
+///   * `sage` - The sage green that goes with the default Sage themes, in a
+///     lighter shade for dark mode and a deeper one for light mode.
+///   * `system` - Follow the accent color chosen in System Settings. Changing
+///     it there applies right away.
+///
+/// While a window is not the key window its accent turns gray, the same as
+/// AppKit's own controls do. Native controls such as menus and text fields
+/// always use the system accent color.
+///
+/// The default value is `sage`.
+@"macos-accent-color": MacAccentColor = .sage,
+
 /// If true, the macOS icon in the dock and app switcher will be hidden. This is
 /// mainly intended for those primarily using the quick-terminal mode.
 ///
@@ -9218,6 +9234,12 @@ pub const WindowColorspace = enum {
 pub const MacWindowButtons = enum {
     visible,
     hidden,
+};
+
+/// See macos-accent-color
+pub const MacAccentColor = enum {
+    sage,
+    system,
 };
 
 /// See macos-titlebar-style

@@ -923,6 +923,12 @@ extension Ghostty {
         let highlighted: Bool
 
         @State private var borderPulse: Bool = false
+        @ObservedObject private var chromeAccent = ChromeAccent.shared
+        @Environment(\.controlActiveState) private var controlActiveState
+
+        private var accentColor: Color {
+            chromeAccent.color(inKeyWindow: controlActiveState == .key)
+        }
 
         var body: some View {
             ZStack {
@@ -930,8 +936,8 @@ extension Ghostty {
                     .fill(
                         RadialGradient(
                             gradient: Gradient(colors: [
-                                Color.accentColor.opacity(0.12),
-                                Color.accentColor.opacity(0.03),
+                                accentColor.opacity(0.12),
+                                accentColor.opacity(0.03),
                                 Color.clear
                             ]),
                             center: .center,
@@ -944,17 +950,17 @@ extension Ghostty {
                     .strokeBorder(
                         LinearGradient(
                             gradient: Gradient(colors: [
-                                Color.accentColor.opacity(0.8),
-                                Color.accentColor.opacity(0.5),
-                                Color.accentColor.opacity(0.8)
+                                accentColor.opacity(0.8),
+                                accentColor.opacity(0.5),
+                                accentColor.opacity(0.8)
                             ]),
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
                         lineWidth: borderPulse ? 4 : 2
                     )
-                    .shadow(color: Color.accentColor.opacity(borderPulse ? 0.8 : 0.6), radius: borderPulse ? 12 : 8, x: 0, y: 0)
-                    .shadow(color: Color.accentColor.opacity(borderPulse ? 0.5 : 0.3), radius: borderPulse ? 24 : 16, x: 0, y: 0)
+                    .shadow(color: accentColor.opacity(borderPulse ? 0.8 : 0.6), radius: borderPulse ? 12 : 8, x: 0, y: 0)
+                    .shadow(color: accentColor.opacity(borderPulse ? 0.5 : 0.3), radius: borderPulse ? 24 : 16, x: 0, y: 0)
             }
             .allowsHitTesting(false)
             .opacity(highlighted ? 1.0 : 0.0)

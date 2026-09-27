@@ -221,7 +221,8 @@ enum TerminalSplitDropZone: String, Equatable {
 
     @ViewBuilder
     func overlay(in geometry: GeometryProxy) -> some View {
-        let overlayColor = Color.accentColor.opacity(0.3)
+        // Only shown during a drag, which happens in the key window.
+        let overlayColor = ChromeAccent.shared.color(inKeyWindow: true).opacity(0.3)
 
         switch self {
         case .top:

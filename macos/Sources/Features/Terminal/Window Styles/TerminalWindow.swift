@@ -38,6 +38,9 @@ class TerminalWindow: NSWindow {
     /// Sets up our tab context menu
     private var tabMenuObserver: NSObjectProtocol?
 
+    /// Re-tints AppKit views that use the chrome accent when it changes.
+    private var chromeAccentCancellable: AnyCancellable?
+
     /// Handles inline tab title editing for this host window.
     private(set) lazy var tabTitleEditor = TabTitleEditor(
         hostWindow: self,
@@ -177,6 +180,14 @@ class TerminalWindow: NSWindow {
 
         // Get our saved level
         level = UserDefaults.ghostty.value(forKey: Self.defaultLevelKey) as? NSWindow.Level ?? .normal
+
+        // objectWillChange fires before the new value is stored, so tint on the next turn.
+        chromeAccentCancellable = ChromeAccent.shared.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.resetZoomTabButton.contentTintColor = ChromeAccent.shared.nsColor(inKeyWindow: self.isKeyWindow)
+            }
+        }
     }
 
     // Both of these must be true for windows without decorations to be able to
@@ -204,12 +215,12 @@ class TerminalWindow: NSWindow {
 
     override func becomeKey() {
         super.becomeKey()
-        resetZoomTabButton.contentTintColor = .controlAccentColor
+        resetZoomTabButton.contentTintColor = ChromeAccent.shared.nsColor(inKeyWindow: true)
     }
 
     override func resignKey() {
         super.resignKey()
-        resetZoomTabButton.contentTintColor = .secondaryLabelColor
+        resetZoomTabButton.contentTintColor = ChromeAccent.shared.nsColor(inKeyWindow: false)
         tabTitleEditor.finishEditing(commit: true)
     }
 
@@ -378,7 +389,7 @@ class TerminalWindow: NSWindow {
         button.isBordered = false
         button.allowsExpansionToolTips = true
         button.toolTip = "Reset Zoom"
-        button.contentTintColor = isMainWindow ? .controlAccentColor : .secondaryLabelColor
+        button.contentTintColor = ChromeAccent.shared.nsColor(inKeyWindow: isMainWindow)
         button.state = .on
         button.image = NSImage(named: "ResetZoom")
         button.frame = NSRect(x: 0, y: 0, width: 20, height: 20)
@@ -714,12 +725,14 @@ extension TerminalWindow {
         @ObservedObject var viewModel: ViewModel
         let action: () -> Void
 
+        @ObservedObject private var chromeAccent = ChromeAccent.shared
+
         var body: some View {
             if viewModel.isSurfaceZoomed {
                 VStack {
                     Button(action: action) {
                         Image("ResetZoom")
-                            .foregroundColor(viewModel.isMainWindow ? .accentColor : .secondary)
+                            .foregroundColor(chromeAccent.color(inKeyWindow: viewModel.isMainWindow))
                     }
                     .buttonStyle(.plain)
                     .help("Reset Split Zoom")

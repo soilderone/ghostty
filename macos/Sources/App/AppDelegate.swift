@@ -811,6 +811,7 @@ class AppDelegate: NSObject,
         // this is called as part of application launch it can deadlock with an internal
         // AppKit mutex on the appearance.
         DispatchQueue.main.async { self.syncAppearance(config: config) }
+        ChromeAccent.shared.update(from: config)
 
         // Decide whether to hide/unhide app from dock and app switcher
         switch config.macosHidden {

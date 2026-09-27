@@ -6,11 +6,14 @@ import SwiftUI
 struct SurfaceProgressBar: View {
     let report: Ghostty.Action.ProgressReport
 
+    @ObservedObject private var chromeAccent = ChromeAccent.shared
+    @Environment(\.controlActiveState) private var controlActiveState
+
     private var color: Color {
         switch report.state {
-        case .error: return .red
-        case .pause: return .orange
-        default: return .accentColor
+        case .error: return Color(nsColor: ChromePalette.error)
+        case .pause: return Color(nsColor: ChromePalette.warning)
+        default: return chromeAccent.color(inKeyWindow: controlActiveState == .key)
         }
     }
 

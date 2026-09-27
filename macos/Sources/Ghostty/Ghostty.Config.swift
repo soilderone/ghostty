@@ -413,6 +413,16 @@ extension Ghostty {
             return v
         }
 
+        var macosAccentColor: MacOSAccentColor {
+            let defaultValue = MacOSAccentColor.sage
+            guard let config = self.config else { return defaultValue }
+            var v: UnsafePointer<Int8>?
+            let key = "macos-accent-color"
+            guard ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8))) else { return defaultValue }
+            guard let ptr = v else { return defaultValue }
+            return MacOSAccentColor(rawValue: String(cString: ptr)) ?? defaultValue
+        }
+
         var macosIcon: MacOSIcon {
             let defaultValue = MacOSIcon.official
             guard let config = self.config else { return defaultValue }
@@ -937,6 +947,10 @@ extension Ghostty.Config {
     enum MacOSTitlebarStyle: String {
         static let `default` = MacOSTitlebarStyle.transparent
         case native, transparent, tabs, hidden
+    }
+
+    enum MacOSAccentColor: String {
+        case sage, system
     }
 
     enum DragHandle: String {

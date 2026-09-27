@@ -24,6 +24,8 @@ cursor-text = #181f1b
 # same color composited onto the background.
 selection-background = #384635
 selection-foreground = cell-foreground
+# The chrome's separator color, so splits read like panel borders.
+split-divider-color = #2b362e
 search-background = #c4a000
 search-foreground = #181f1b
 search-selected-background = #e0bd72
