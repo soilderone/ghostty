@@ -33,10 +33,15 @@
 - 默认值放在 `src/config/macos-defaults.ghostty`，装进 `Resources/ghostty/`；app 读取配置时
   先加载它，再加载用户配置，所以用户的任何设置都能覆盖它。没有改 Zig 里 `theme` 字段的
   默认值——那样 `theme =` 会重置成 sage 而无法取消，也会影响核心的单元测试。
+- 只有读取用户默认配置文件时才加载这个默认值；显式指定配置路径时（单元测试的
+  `TemporaryConfig`、UI 测试用的 `GHOSTTY_CONFIG_PATH`）不加载，保持上游默认，
+  因为有几个 UI 测试假设终端是 Ghostty 原本的深色底。
 
-**提交：** `68f9429`
+**提交：** `68f9429`、`a8a885f`
 
-**验证状态：** 待 CI 验证
+**验证状态：** CI 构建通过（run 36323408224，提交 `ec9fdb8`）。CI 用包内的
+`ghostty +validate-config` 校验了默认值文件和两个主题文件，没有报错。
+配色在 app 里的实际效果、跟随系统切换还没有实机验证。
 
 **已知问题 / 未实现**
 
@@ -82,6 +87,8 @@
 - 签名：没有配置签名密钥时，用上游本地构建用的 `ReleaseLocal` 配置，保持 ad-hoc 签名；
   配置了 `PROD_MACOS_CERTIFICATE` 等密钥时，改用 `Release` 配置并按上游方式做 Developer ID 签名
   （不做公证）。
+- 构建完成后用包内的 `ghostty +validate-config` 校验 fork 自带的配置文件（默认值文件和
+  `src/themes/` 里的主题），这些文件只在运行时读取，构建本身发现不了写错的键。
 - 最后一步跑 `swiftlint lint --strict`；放在上传之后，lint 失败时仍能拿到安装包。
 
 **怎么用**
@@ -94,9 +101,12 @@
 **配置项：** 无（可选的仓库 secrets：`PROD_MACOS_CERTIFICATE`、`PROD_MACOS_CERTIFICATE_PWD`、
 `PROD_MACOS_CERTIFICATE_NAME`、`PROD_MACOS_CI_KEYCHAIN_PWD`）
 
-**提交：** `c87aebb`、`7a0a6a0`
+**提交：** `c87aebb`、`7a0a6a0`、`ec9fdb8`
 
-**验证状态：** 待 CI 验证
+**验证状态：** CI 构建通过。run 36322596272（提交 `7a0a6a0`）和 run 36323408224
+（提交 `ec9fdb8`）全部步骤成功：GhosttyKit 约 5–8 分钟，app 约 2 分钟，整次约 9–12 分钟；
+`codesign --verify --deep --strict` 通过；SwiftLint 0.65.1 检查 196 个文件 0 违规。
+产物能否在 Mac 上正常打开还没有实机验证。
 
 **已知问题**
 
