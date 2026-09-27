@@ -177,6 +177,25 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # The config files this fork bundles are only read at runtime, so the
+      # build doesn't catch mistakes in them. Validating the defaults file
+      # also resolves and loads the theme it names.
+      - name: Validate bundled config
+        timeout-minutes: 5
+        env:
+          APP: macos/build/${{ steps.info.outputs.configuration }}/Ghostty.app
+        run: |
+          set -euo pipefail
+          res="$APP/Contents/Resources/ghostty"
+          files=("$res/macos-defaults.ghostty")
+          for theme in src/themes/*; do
+            files+=("$res/themes/$(basename "$theme")")
+          done
+          for f in "${files[@]}"; do
+            echo "validating $f"
+            "$APP/Contents/MacOS/ghostty" +validate-config --config-file="$f"
+          done
+
       - name: Summary
         env:
           COMMIT: ${{ steps.info.outputs.commit }}
