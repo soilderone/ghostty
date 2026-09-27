@@ -1,0 +1,49 @@
+# Wave 迁移更新日志
+
+记录把 Wave fork 的功能迁到这个 Ghostty fork（只做 macOS 版）的进度，最新的条目在最上面。
+功能编号对应 `WAVE-MIGRATION.md`。
+
+验证状态：**待 CI 验证** → **CI 构建通过** → **已实机验证**。
+
+## 2026-09-27 · P2：fork 的构建流水线（CI）
+
+**做了什么**
+
+- 新增 `.github/workflows/wave-build-macos.yml`（Actions 页面里叫 "Build macOS (fork)"）：
+  手动触发，在 GitHub 托管的 `macos-26`（Apple Silicon）runner 上用 Xcode 26 构建 arm64 的
+  `Ghostty.app`，打成 zip 作为 artifact 上传（保留 30 天）。
+- 构建步骤与上游一致：先用
+  `zig build -Doptimize=ReleaseFast -Demit-macos-app=false -Dxcframework-target=native`
+  生成 GhosttyKit，再用 `xcodebuild` 构建 app。
+  Info.plist 里写入提交哈希（"关于"窗口可见）和构建号（提交数）。
+- 签名：没有配置签名密钥时，用上游本地构建用的 `ReleaseLocal` 配置，保持 ad-hoc 签名；
+  配置了 `PROD_MACOS_CERTIFICATE` 等密钥时，改用 `Release` 配置并按上游方式做 Developer ID 签名
+  （不做公证）。
+- 最后一步跑 `swiftlint lint --strict`；放在上传之后，lint 失败时仍能拿到安装包。
+
+**怎么用**
+
+- Actions → Build macOS (fork) → Run workflow，分支选 `feat/wave-migration`（按钮不出现时见下方已知问题）。
+  可选填 Xcode 版本（如 `26.6`），留空则用 runner 上最新的 Xcode 26.x。
+- 下载 artifact，解压两层 zip 得到 `Ghostty.app`。首次打开前需要去掉隔离标记：
+  `xattr -dr com.apple.quarantine /path/to/Ghostty.app`。
+
+**配置项：** 无（可选的仓库 secrets：`PROD_MACOS_CERTIFICATE`、`PROD_MACOS_CERTIFICATE_PWD`、
+`PROD_MACOS_CERTIFICATE_NAME`、`PROD_MACOS_CI_KEYCHAIN_PWD`）
+
+**提交：** `c87aebb`、`7a0a6a0`
+
+**验证状态：** 待 CI 验证
+
+**已知问题**
+
+- GitHub 只允许手动触发已"注册"的工作流，而只放在非默认分支上的纯 `workflow_dispatch`
+  工作流不会被注册（触发时报 404）。所以加了一个只在这个工作流文件本身变更时生效的 `push`
+  触发器，用来注册；push 事件下构建 job 直接跳过，不占用 runner。
+  网页上的 "Run workflow" 按钮按 GitHub 文档要求默认分支（`main`）上有这个文件，所以可能不出现；
+  这时可以用 `gh workflow run wave-build-macos.yml --ref feat/wave-migration`（或 API）触发。
+- app 的 bundle ID 仍是 `com.mitchellh.ghostty`，和官方 Ghostty 共用偏好设置、配置目录；
+  自动检查更新保持关闭，但手动"检查更新"会拉到官方版本并覆盖这个构建。
+- 上游的 `Test`、`Nix` 工作流在 fork 上 push 时也会运行：大部分 job 因仓库判断被跳过，
+  但两个汇总 job（"Required Checks"）没有仓库判断、用的是上游专用 runner，会一直排队直到超时。
+  与本工作流无关，没有改动。
