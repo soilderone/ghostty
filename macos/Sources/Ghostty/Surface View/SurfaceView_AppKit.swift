@@ -1832,6 +1832,7 @@ extension Ghostty {
             let backgroundOpacity: Double
             let backgroundBlur: Ghostty.Config.BackgroundBlur
             let macosWindowShadow: Bool
+            let macosWindowVibrancy: Bool
             let windowTitleFontFamily: String?
             let windowAppearance: NSAppearance?
             let scrollbar: Ghostty.Config.Scrollbar
@@ -1841,6 +1842,7 @@ extension Ghostty {
                 self.backgroundOpacity = 1
                 self.backgroundBlur = .disabled
                 self.macosWindowShadow = true
+                self.macosWindowVibrancy = false
                 self.windowTitleFontFamily = nil
                 self.windowAppearance = nil
                 self.scrollbar = .system
@@ -1851,6 +1853,7 @@ extension Ghostty {
                 self.backgroundOpacity = config.backgroundOpacity
                 self.backgroundBlur = config.backgroundBlur
                 self.macosWindowShadow = config.macosWindowShadow
+                self.macosWindowVibrancy = config.macosWindowVibrancy
                 self.windowTitleFontFamily = config.windowTitleFontFamily
                 self.windowAppearance = .init(ghosttyConfig: config)
                 self.scrollbar = config.scrollbar

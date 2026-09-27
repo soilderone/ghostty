@@ -10,6 +10,18 @@ class TerminalViewContainer: NSView {
     private(set) var glassEffectView: NSView?
     private var derivedConfig: DerivedConfig?
 
+    /// The `macos-window-vibrancy` material behind the terminals. It is only visible
+    /// where the window frame is left clear, since the terminals are opaque.
+    private var vibrancyView: TerminalVibrancyView?
+
+    /// Set by the window when `macos-window-vibrancy` is in effect.
+    var showsVibrancy: Bool = false {
+        didSet {
+            guard showsVibrancy != oldValue else { return }
+            updateVibrancyView()
+        }
+    }
+
     var windowThemeFrameView: NSView? {
         window?.contentView?.superview
     }
@@ -67,11 +79,13 @@ class TerminalViewContainer: NSView {
         super.viewDidMoveToWindow()
         updateGlassEffectIfNeeded()
         updateGlassEffectTopInsetIfNeeded()
+        updateVibrancyView()
     }
 
     override func layout() {
         super.layout()
         updateGlassEffectTopInsetIfNeeded()
+        updateVibrancyTopInset()
     }
 
     func ghosttyConfigDidChange(_ config: Ghostty.Config, preferredBackgroundColor: NSColor?) {
@@ -86,6 +100,65 @@ class TerminalViewContainer: NSView {
         } else {
             DispatchQueue.main.async(execute: updateGlassEffectIfNeeded)
         }
+    }
+}
+
+// MARK: Vibrancy
+
+/// The material behind the window frame for `macos-window-vibrancy`.
+private class TerminalVibrancyView: NSVisualEffectView {
+    private(set) var topConstraint: NSLayoutConstraint?
+
+    init() {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        material = .underWindowBackground
+        blendingMode = .behindWindow
+        state = .followsWindowActiveState
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func pin(to container: NSView, topOffset: CGFloat) {
+        let top = topAnchor.constraint(equalTo: container.topAnchor, constant: topOffset)
+        NSLayoutConstraint.activate([
+            top,
+            leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        ])
+        topConstraint = top
+    }
+
+    // Purely a backdrop: the titlebar and terminals above it handle all input.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+extension TerminalViewContainer {
+    private func updateVibrancyView() {
+        guard showsVibrancy, let themeFrameView = windowThemeFrameView else {
+            vibrancyView?.removeFromSuperview()
+            vibrancyView = nil
+            return
+        }
+        guard vibrancyView == nil else { return }
+
+        // The content view starts below the titlebar, so extend upward by the
+        // titlebar's height to sit behind it too (the same as the glass view).
+        let view = TerminalVibrancyView()
+        addSubview(view, positioned: .below, relativeTo: nil)
+        view.pin(to: self, topOffset: -themeFrameView.safeAreaInsets.top)
+        vibrancyView = view
+    }
+
+    private func updateVibrancyTopInset() {
+        guard let vibrancyView, let themeFrameView = windowThemeFrameView else { return }
+        let offset = -themeFrameView.safeAreaInsets.top
+        guard vibrancyView.topConstraint?.constant != offset else { return }
+        vibrancyView.topConstraint?.constant = offset
     }
 }
 

@@ -54,6 +54,10 @@ class TerminalWindow: NSWindow {
     /// Glass effect view for liquid glass background when transparency is enabled
     private var glassEffectView: NSView?
 
+    /// Whether `macos-window-vibrancy` is currently in effect for this window. Set by
+    /// ``syncAppearance(_:)`` before subclasses style the titlebar.
+    private(set) var showsVibrancy: Bool = false
+
     /// Gets the terminal controller from the window controller.
     var terminalController: TerminalController? {
         windowController as? TerminalController
@@ -535,6 +539,14 @@ class TerminalWindow: NSWindow {
         //
         // Also check if the user has overridden transparency to be fully opaque.
         let forceOpaque = terminalController?.isBackgroundOpaque ?? false
+
+        // Glass already puts a material behind the whole window, so it wins.
+        showsVibrancy = surfaceConfig.macosWindowVibrancy &&
+            !surfaceConfig.backgroundBlur.isGlassStyle &&
+            !styleMask.contains(.fullScreen) &&
+            !forceOpaque
+        (contentView as? TerminalViewContainer)?.showsVibrancy = showsVibrancy
+
         if !styleMask.contains(.fullScreen) &&
             !forceOpaque &&
             (surfaceConfig.backgroundOpacity < 1 || surfaceConfig.backgroundBlur.isGlassStyle) {
@@ -551,6 +563,11 @@ class TerminalWindow: NSWindow {
                     appDelegate.ghostty.app,
                     Unmanaged.passUnretained(self).toOpaque())
             }
+        } else if showsVibrancy {
+            // The terminals are opaque; only the frame around them is left
+            // clear for the vibrancy view behind the content to show through.
+            isOpaque = false
+            backgroundColor = .clear
         } else {
             isOpaque = true
 

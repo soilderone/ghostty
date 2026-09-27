@@ -3483,6 +3483,22 @@ keybind: Keybinds = .{},
 /// find false more visually appealing.
 @"macos-window-shadow": bool = true,
 
+/// If true, the window frame shows the macOS "under window" vibrancy
+/// material, so the desktop shows through it blurred. The frame is the
+/// part of the window around the terminals, such as the titlebar and the
+/// tab bar. The terminals themselves stay opaque, so their contrast doesn't
+/// depend on what is behind the window. This differs from
+/// `background-opacity` and `background-blur`, which apply to the whole
+/// window including the terminals.
+///
+/// The frame is only visible with `macos-titlebar-style` set to
+/// `transparent` or, on macOS 26 and later, `tabs`. This has no effect in
+/// native fullscreen or when `background-blur` is a macOS glass style,
+/// which already gives the whole window a material.
+///
+/// The default value is false.
+@"macos-window-vibrancy": bool = false,
+
 /// If true, the macOS icon in the dock and app switcher will be hidden. This is
 /// mainly intended for those primarily using the quick-terminal mode.
 ///
