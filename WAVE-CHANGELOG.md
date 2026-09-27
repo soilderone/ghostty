@@ -5,6 +5,46 @@
 
 验证状态：**待 CI 验证** → **CI 构建通过** → **已实机验证**。
 
+## 2026-09-27 · 功能 2：sage 终端配色
+
+**做了什么**
+
+- 新增两个内置主题 `Sage Dark`（与深色外壳一致的 sage "ink" 配色）和 `Sage Light`
+  （ANSI 颜色加深、黄色改成赭色），颜色取自 Wave 的 `default-dark` / `default-light`。
+  `ghostty +list-themes` 里能看到，也可以单独选用。
+- macOS 版默认跟随系统深浅色：系统切换外观时终端配色跟着切换。
+- 光标颜色、光标下文字颜色、选区颜色、搜索高亮颜色都跟着配色走：
+  - 深色：匹配项 `#c4a000`，当前匹配 `#e0bd72`，文字用底色 `#181f1b`。
+  - 浅色：匹配项 `#8a6a12`，当前匹配 `#b4453c`，文字用底色 `#fcfdfa`。
+  - 选区：Wave 是半透明叠加，Ghostty 的 `selection-background` 不支持透明度，
+    所以预先混合到底色上（深色 `#384635`，浅色 `#cfdbd2`），选中文字保持原色。
+
+**配置项**
+
+- 没有新增配置键。macOS 版的默认值相当于 `theme = light:Sage Light,dark:Sage Dark`。
+- 在自己的配置里写 `theme = …` 会整体替换这个默认值；写 `theme =`（空值）则回到
+  Ghostty 原本的配色（不用任何主题）。
+- `background`、`foreground`、`palette` 等单独设置的颜色仍然覆盖主题里的值。
+
+**实现方式**
+
+- 主题文件在 `src/themes/`，构建时装进 `Ghostty.app/Contents/Resources/ghostty/themes/`，
+  不受 `emit-themes` 开关影响。
+- 默认值放在 `src/config/macos-defaults.ghostty`，装进 `Resources/ghostty/`；app 读取配置时
+  先加载它，再加载用户配置，所以用户的任何设置都能覆盖它。没有改 Zig 里 `theme` 字段的
+  默认值——那样 `theme =` 会重置成 sage 而无法取消，也会影响核心的单元测试。
+
+**提交：** `68f9429`
+
+**验证状态：** 待 CI 验证
+
+**已知问题 / 未实现**
+
+- 命令行 `ghostty +show-config` 不加载这个默认值，显示的 `theme` 仍为空；实际 app 里是生效的。
+- 同时使用不同的深浅色主题时，Ghostty 会把 `window-theme = auto` 当作 `system` 处理（上游行为）；
+  上游已知 `macos-titlebar-style = tabs` 在切换主题时标题栏 tab 不会刷新。
+- Wave 的搜索高亮只画边框，Ghostty 的搜索高亮是填充底色，所以用配色里的颜色做底色、底色做文字色。
+
 ## 2026-09-27 · 功能 1：tab 颜色标记
 
 **结论：Ghostty 已覆盖，没有写代码。**

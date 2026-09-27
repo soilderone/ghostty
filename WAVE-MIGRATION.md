@@ -18,7 +18,7 @@ Ghostty fork 里重新实现的功能。目标平台**只有 macOS 版**。
 | P2  | fork 的构建流水线（CI）         | 低    | —     | 待 CI 验证 |
 | P3  | 承载非终端面板                  | 高    | —     |            |
 | 1   | tab 颜色标记                    | 低    | —     | 完成       |
-| 2   | sage 终端配色                   | 低    | —     |            |
+| 2   | sage 终端配色                   | 低    | —     | 待 CI 验证 |
 | 3   | 只在外框透出的毛玻璃            | 低–中 | —     |            |
 | 4   | 界面主题、sage 外壳配色与强调色 | 低–中 | —     |            |
 | 5   | 工具栏（tool rail）             | 低–中 | P3    |            |
@@ -80,6 +80,8 @@ Ghostty 已经把每个终端的 pwd（OSC 7）传到了 Swift 层。
 （`TerminalTabColor.swift`），先确认它是否已经覆盖。
 
 ### 2. sage 终端配色 — 低
+
+**状态：待 CI 验证。** 内置主题 `Sage Dark` / `Sage Light`，macOS 版默认 `theme = light:Sage Light,dark:Sage Dark`，见 changelog。
 
 写 Ghostty 主题文件即可，再用 `theme = light:…,dark:…` 跟随系统主题切换。
 
