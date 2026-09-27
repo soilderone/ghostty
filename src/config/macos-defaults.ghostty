@@ -1,0 +1,4 @@
+# Defaults the macOS app loads before any user configuration, so every
+# setting here can be overridden from the user's config file. Setting
+# `theme =` (empty) there restores Ghostty's built-in colors.
+theme = light:Sage Light,dark:Sage Dark

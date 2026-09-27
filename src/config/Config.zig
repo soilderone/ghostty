@@ -594,6 +594,11 @@ language: ?[:0]const u8 = null,
 /// must be specified in this form. In this form, the theme used will be
 /// based on the current desktop environment theme.
 ///
+/// The macOS app loads `light:Sage Light,dark:Sage Dark` before your
+/// configuration, so that is its default. Set `theme` to replace it, or
+/// set it to an empty value (`theme =`) to use Ghostty's built-in colors.
+/// The CLI (e.g. `ghostty +show-config`) does not load this default.
+///
 /// There are some known bugs with light/dark mode theming. These will
 /// be fixed in a future update:
 ///

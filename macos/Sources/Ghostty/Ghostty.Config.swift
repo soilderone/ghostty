@@ -64,6 +64,12 @@ extension Ghostty {
                 return nil
             }
 
+            // The bundled defaults go first so that everything the user sets,
+            // including `theme`, overrides them.
+            if let defaults = bundledDefaultsPath {
+                ghostty_config_load_file(cfg, defaults)
+            }
+
             // Load our configuration from files, CLI args, and then any referenced files.
             if let path {
                 ghostty_config_load_file(cfg, path)
@@ -102,6 +108,14 @@ extension Ghostty {
             }
 
             return cfg
+        }
+
+        /// Configuration defaults shipped in the app bundle (see
+        /// `src/config/macos-defaults.ghostty`), or nil if this build has none.
+        private static var bundledDefaultsPath: String? {
+            guard let url = Bundle.main.resourceURL?
+                .appendingPathComponent("ghostty/macos-defaults.ghostty") else { return nil }
+            return FileManager.default.fileExists(atPath: url.path) ? url.path : nil
         }
 
         // MARK: - Keybindings

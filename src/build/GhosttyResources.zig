@@ -138,6 +138,27 @@ pub fn init(b: *std.Build, cfg: *const Config, deps: *const SharedDeps) !Ghostty
         }
     }
 
+    // Our own themes are installed regardless of emit-themes because the
+    // macOS app defaults to them.
+    {
+        const install_step = b.addInstallDirectory(.{
+            .source_dir = b.path("src/themes"),
+            .install_dir = .{ .custom = "share" },
+            .install_subdir = b.pathJoin(&.{ "ghostty", "themes" }),
+        });
+        try steps.append(b.allocator, &install_step.step);
+    }
+
+    // Configuration defaults the macOS app loads ahead of the user's
+    // configuration files.
+    if (cfg.target.result.os.tag == .macos) {
+        const install_step = b.addInstallFile(
+            b.path("src/config/macos-defaults.ghostty"),
+            "share/ghostty/macos-defaults.ghostty",
+        );
+        try steps.append(b.allocator, &install_step.step);
+    }
+
     // Fish shell completions
     {
         const run = b.addRunArtifact(build_data_exe);

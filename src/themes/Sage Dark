@@ -1,0 +1,30 @@
+# Sage Dark: the dark sage "ink" palette, matched to the dark window shell.
+# Ported from the Wave fork's "default-dark" terminal theme.
+palette = 0=#757575
+palette = 1=#cc685c
+palette = 2=#76c266
+palette = 3=#cbca9b
+palette = 4=#85aacb
+palette = 5=#cc72ca
+palette = 6=#74a7cb
+palette = 7=#c1c1c1
+palette = 8=#727272
+palette = 9=#cc9d97
+palette = 10=#a3dd97
+palette = 11=#cbcaaa
+palette = 12=#9ab6cb
+palette = 13=#cc8ecb
+palette = 14=#b7b8cb
+palette = 15=#f0f0f0
+background = #181f1b
+foreground = #c1c1c1
+cursor-color = #9cc487
+cursor-text = #181f1b
+# Wave draws the selection as a translucent overlay; this is the
+# same color composited onto the background.
+selection-background = #384635
+selection-foreground = cell-foreground
+search-background = #c4a000
+search-foreground = #181f1b
+search-selected-background = #e0bd72
+search-selected-foreground = #181f1b

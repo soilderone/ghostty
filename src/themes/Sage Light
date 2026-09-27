@@ -1,0 +1,31 @@
+# Sage Light: the light sage palette; ANSI colors are darkened for contrast
+# on the light background and yellow is an ochre.
+# Ported from the Wave fork's "default-light" terminal theme.
+palette = 0=#3c463f
+palette = 1=#b4453c
+palette = 2=#3f7a4d
+palette = 3=#8a6a12
+palette = 4=#3f6f93
+palette = 5=#7c4f95
+palette = 6=#2f7d74
+palette = 7=#5d6a60
+palette = 8=#788078
+palette = 9=#9c362e
+palette = 10=#2f6b3e
+palette = 11=#725509
+palette = 12=#2f5d80
+palette = 13=#6a3f82
+palette = 14=#256b63
+palette = 15=#252d29
+background = #fcfdfa
+foreground = #252d29
+cursor-color = #2f6343
+cursor-text = #fcfdfa
+# Wave draws the selection as a translucent overlay; this is the
+# same color composited onto the background.
+selection-background = #cfdbd2
+selection-foreground = cell-foreground
+search-background = #8a6a12
+search-foreground = #fcfdfa
+search-selected-background = #b4453c
+search-selected-foreground = #fcfdfa
