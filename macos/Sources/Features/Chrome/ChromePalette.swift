@@ -55,6 +55,9 @@ enum ChromePalette {
         dark: rgb(0xFFFFFF, alpha: 0.06),
         light: rgb(0xFFFFFF, alpha: 0.5))
 
+    /// The raised pill that marks the selection in a track, such as the selected tab.
+    static let thumb = dynamic(dark: 0x2C3530, light: 0xFFFFFF)
+
     /// The highlight along the top edge of raised surfaces.
     static let rim = dynamic(
         dark: rgb(0xFFFFFF, alpha: 0.09),

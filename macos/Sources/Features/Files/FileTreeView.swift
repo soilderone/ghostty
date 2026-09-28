@@ -509,23 +509,3 @@ final class FileCellView: NSTableCellView {
         toolTip = node.entry.url.path
     }
 }
-
-/// A menu item that runs a closure.
-private final class ClosureMenuItem: NSMenuItem {
-    private let handler: () -> Void
-
-    init(title: String, action handler: @escaping () -> Void) {
-        self.handler = handler
-        super.init(title: title, action: #selector(run), keyEquivalent: "")
-        target = self
-    }
-
-    @available(*, unavailable)
-    required init(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    @objc private func run() {
-        handler()
-    }
-}

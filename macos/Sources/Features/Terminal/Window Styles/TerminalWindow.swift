@@ -61,6 +61,9 @@ class TerminalWindow: NSWindow {
     /// ``syncAppearance(_:)`` before subclasses style the titlebar.
     private(set) var showsVibrancy: Bool = false
 
+    /// The capsule tab bar that replaces the native one with `macos-capsule-tabs`.
+    private(set) var capsuleTabs: CapsuleTabs?
+
     /// Gets the terminal controller from the window controller.
     var terminalController: TerminalController? {
         windowController as? TerminalController
@@ -73,6 +76,7 @@ class TerminalWindow: NSWindow {
             guard tabColor != oldValue else { return }
             tabColorIndicator.rootView = TabColorIndicatorView(tabColor: tabColor)
             invalidateRestorableState()
+            NotificationCenter.default.post(name: CapsuleTabs.tabsDidChange, object: self)
         }
     }
 
@@ -188,6 +192,16 @@ class TerminalWindow: NSWindow {
                 self.resetZoomTabButton.contentTintColor = ChromeAccent.shared.nsColor(inKeyWindow: self.isKeyWindow)
             }
         }
+
+        // Capsule tabs only replace the native tab bar of the native and transparent
+        // titlebars. The tabs style draws its own tabs, and the hidden style has no tabs.
+        if config.macosCapsuleTabs,
+           styleMask.contains(.titled),
+           derivedConfig.macosTitlebarStyle == .native || derivedConfig.macosTitlebarStyle == .transparent {
+            let capsuleTabs = CapsuleTabs(window: self)
+            self.capsuleTabs = capsuleTabs
+            capsuleTabs.install()
+        }
     }
 
     // Both of these must be true for windows without decorations to be able to
@@ -235,6 +249,7 @@ class TerminalWindow: NSWindow {
             tabBarDidDisappear()
         }
         viewModel.isMainWindow = true
+        capsuleTabs?.windowDidBecomeSelected()
     }
 
     override func resignMain() {
@@ -276,7 +291,14 @@ class TerminalWindow: NSWindow {
         if isTabBar(childViewController) {
             childViewController.identifier = Self.tabBarIdentifier
             tabBarDidAppear()
+            capsuleTabs?.hideNativeTabBar(childViewController)
         }
+    }
+
+    // The capsule tab bar replaces the native one, so the native one never shows.
+    override func toggleTabBar(_ sender: Any?) {
+        guard capsuleTabs == nil else { return }
+        super.toggleTabBar(sender)
     }
 
     override func removeTitlebarAccessoryViewController(at index: Int) {
@@ -372,6 +394,9 @@ class TerminalWindow: NSWindow {
             // Show/hide our reset zoom button depending on if we're zoomed.
             // We want to show it if we are zoomed.
             resetZoomTabButton.isHidden = !surfaceIsZoomed
+            if surfaceIsZoomed != oldValue {
+                NotificationCenter.default.post(name: CapsuleTabs.tabsDidChange, object: self)
+            }
 
             DispatchQueue.main.async {
                 self.viewModel.isSurfaceZoomed = self.surfaceIsZoomed
@@ -409,6 +434,7 @@ class TerminalWindow: NSWindow {
             guard title != oldValue else { return }
 
             syncWindowTitleAppearance()
+            NotificationCenter.default.post(name: CapsuleTabs.tabsDidChange, object: self)
         }
     }
 

@@ -3545,6 +3545,27 @@ keybind: Keybinds = .{},
 /// The default value is true.
 @"macos-split-frame": bool = true,
 
+/// If true, the tabs of a window are drawn as capsules in the titlebar, on
+/// the same row as the window buttons, instead of the native tab bar. The
+/// selected tab is a raised pill that slides over from the previous tab,
+/// with a dot in the accent color (see `macos-accent-color`). A tab's close
+/// button shows while the pointer is over the tab, and always on the
+/// selected tab. A button after the tabs opens a new tab, and the bar shows
+/// even with a single tab.
+///
+/// Tabs are still native macOS tabs, so keyboard shortcuts, the Window menu,
+/// Show All Tabs and window restoration work as before. Tabs are reordered
+/// by dragging them within the bar; to move a tab to another window, use
+/// "Move Tab to New Window" in its context menu, then merge windows from the
+/// Window menu. The system's Show Tab Bar menu item does nothing while this
+/// is true.
+///
+/// This only applies to the `native` and `transparent` values of
+/// `macos-titlebar-style`.
+///
+/// The default value is true.
+@"macos-capsule-tabs": bool = true,
+
 /// If true, the macOS icon in the dock and app switcher will be hidden. This is
 /// mainly intended for those primarily using the quick-terminal mode.
 ///
