@@ -575,6 +575,8 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             // Update our derived config
             self.derivedConfig = DerivedConfig(config)
 
+            terminalViewContainer?.setToolRailVisible(config.macosToolRail)
+
             // If we have no surfaces in our window (is that possible?) then we update
             // our window appearance based on the root config. If we have surfaces, we
             // don't call this because focused surface changes will trigger appearance updates.
@@ -1126,14 +1128,23 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             TerminalView(ghostty: ghostty, viewModel: self, delegate: self)
         }
 
-        // The sidebars go beside the split tree, outside of the SwiftUI view.
+        // The sidebars and the tool rail go beside the split tree, outside of the SwiftUI view.
         container.installSidebars(
             sidebars,
+            toolRailActions: .init(
+                newSplit: { [weak self] in
+                    guard let self else { return }
+                    self.splitRight(self)
+                },
+                toggleSidebar: { [weak self] in self?.sidebars.toggle($0) },
+                openConfig: { [weak self] in self?.ghostty.openConfig() }
+            ),
             extendsIntoTitlebar: config.macosTitlebarStyle == .hidden
         ) { [weak self] in
             guard let focusedSurface = self?.focusedSurface else { return }
             Ghostty.moveFocus(to: focusedSurface)
         }
+        container.setToolRailVisible(config.macosToolRail)
 
         // Set the initial content size on the container so that
         // intrinsicContentSize returns the correct value immediately,

@@ -2,23 +2,27 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// Places a terminal window's sidebars beside its terminal view inside the window's
-/// ``TerminalViewContainer``. Only the terminal view's frame changes; the split tree inside
-/// it is untouched, so opening a sidebar works like making the window narrower.
+/// Places a terminal window's sidebars and tool rail beside its terminal view inside the
+/// window's ``TerminalViewContainer``, from left to right: leading sidebar, terminal, trailing
+/// sidebar, tool rail. Only the terminal view's frame changes; the split tree inside it is
+/// untouched, so opening a sidebar works like making the window narrower.
 final class TerminalSidebarsLayout {
     /// The narrowest the terminal area gets before the sidebars start to shrink instead.
     static let minimumTerminalWidth: CGFloat = 160
 
     private let leading: SidebarColumn
     private let trailing: SidebarColumn
+    private let toolRail: NSView
+    private let toolRailWidth: NSLayoutConstraint
 
     /// The width of everything laid out beside the terminal.
     var widthBesideTerminal: CGFloat {
-        leading.preferredWidth + trailing.preferredWidth
+        leading.preferredWidth + trailing.preferredWidth + toolRailWidth.constant
     }
 
-    /// Adds the sidebars to the container, which must already contain the terminal view with
-    /// its top and bottom pinned and nothing pinning its leading or trailing edges.
+    /// Adds the sidebars and the tool rail to the container, which must already contain the
+    /// terminal view with its top and bottom pinned and nothing pinning its leading or
+    /// trailing edges.
     ///
     /// - Parameters:
     ///   - extendsIntoTitlebar: Whether the terminal extends into the titlebar area (the
@@ -28,14 +32,23 @@ final class TerminalSidebarsLayout {
         container: NSView,
         terminalView: NSView,
         sidebars: TerminalSidebars,
+        toolRailActions: ToolRailActions,
         extendsIntoTitlebar: Bool,
         returnFocus: @escaping () -> Void
     ) {
         leading = SidebarColumn(edge: .leading, sidebars: sidebars, returnFocus: returnFocus)
         trailing = SidebarColumn(edge: .trailing, sidebars: sidebars, returnFocus: returnFocus)
 
+        // Sized only by the constraints below, like the sidebars.
+        let toolRailView = NSHostingView(rootView: ToolRailView(sidebars: sidebars, actions: toolRailActions))
+        toolRailView.sizingOptions = []
+        toolRailView.translatesAutoresizingMaskIntoConstraints = false
+        toolRail = toolRailView
+        toolRailWidth = toolRailView.widthAnchor.constraint(equalToConstant: ToolRailView.width)
+
         container.addSubview(leading)
         container.addSubview(trailing)
+        container.addSubview(toolRail)
 
         let top = extendsIntoTitlebar
             ? container.topAnchor
@@ -56,10 +69,21 @@ final class TerminalSidebarsLayout {
             trailing.topAnchor.constraint(equalTo: top),
             trailing.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             trailing.leadingAnchor.constraint(equalTo: terminalView.trailingAnchor),
-            trailing.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            trailing.trailingAnchor.constraint(equalTo: toolRail.leadingAnchor),
+
+            toolRail.topAnchor.constraint(equalTo: top),
+            toolRail.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            toolRail.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            toolRailWidth,
 
             terminalMinimumWidth,
         ])
+    }
+
+    /// Shows or hides the tool rail (`macos-tool-rail`).
+    func setToolRailVisible(_ visible: Bool) {
+        toolRailWidth.constant = visible ? ToolRailView.width : 0
+        toolRail.isHidden = !visible
     }
 }
 

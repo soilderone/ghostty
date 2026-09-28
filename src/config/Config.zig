@@ -3515,6 +3515,18 @@ keybind: Keybinds = .{},
 /// The default value is `sage`.
 @"macos-accent-color": MacAccentColor = .sage,
 
+/// If true, terminal windows show a tool rail: a narrow vertical bar along
+/// the right edge with buttons to open a new split, show or hide the files
+/// and git sidebars, and open the configuration file. The buttons are gray
+/// until the pointer is over them, and a button stays colored while its
+/// sidebar is open.
+///
+/// The sidebars can also be shown and hidden from the View menu, so they
+/// stay available without the rail. The quick terminal never has a rail.
+///
+/// The default value is true.
+@"macos-tool-rail": bool = true,
+
 /// If true, the macOS icon in the dock and app switcher will be hidden. This is
 /// mainly intended for those primarily using the quick-terminal mode.
 ///

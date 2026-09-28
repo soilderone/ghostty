@@ -423,6 +423,14 @@ extension Ghostty {
             return MacOSAccentColor(rawValue: String(cString: ptr)) ?? defaultValue
         }
 
+        var macosToolRail: Bool {
+            guard let config = self.config else { return true }
+            var v = true
+            let key = "macos-tool-rail"
+            _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
+            return v
+        }
+
         var macosIcon: MacOSIcon {
             let defaultValue = MacOSIcon.official
             guard let config = self.config else { return defaultValue }

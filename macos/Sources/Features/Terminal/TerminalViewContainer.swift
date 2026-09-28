@@ -68,7 +68,8 @@ class TerminalViewContainer: NSView {
             size = initialContentSize
         }
 
-        // `window-width` counts terminal columns, so the sidebars' width adds to it.
+        // `window-width` counts terminal columns, so the sidebars and the tool rail
+        // add to it.
         if let sidebarsLayout, size.width > 0 {
             size.width += sidebarsLayout.widthBesideTerminal
         }
@@ -88,8 +89,8 @@ class TerminalViewContainer: NSView {
         ] + terminalHorizontalConstraints)
     }
 
-    /// Lays out the window's sidebars beside the terminal. Call this once, before the
-    /// container is added to its window.
+    /// Lays out the window's sidebars and tool rail beside the terminal. Call this once,
+    /// before the container is added to its window.
     ///
     /// - Parameters:
     ///   - extendsIntoTitlebar: Whether the terminal extends into the titlebar area (the
@@ -97,6 +98,7 @@ class TerminalViewContainer: NSView {
     ///   - returnFocus: Called when a sidebar closes while it has keyboard focus.
     func installSidebars(
         _ sidebars: TerminalSidebars,
+        toolRailActions: ToolRailActions,
         extendsIntoTitlebar: Bool,
         returnFocus: @escaping () -> Void
     ) {
@@ -106,8 +108,14 @@ class TerminalViewContainer: NSView {
             container: self,
             terminalView: terminalView,
             sidebars: sidebars,
+            toolRailActions: toolRailActions,
             extendsIntoTitlebar: extendsIntoTitlebar,
             returnFocus: returnFocus)
+    }
+
+    /// Shows or hides the tool rail, for windows that have one.
+    func setToolRailVisible(_ visible: Bool) {
+        sidebarsLayout?.setToolRailVisible(visible)
     }
 
     override func viewDidMoveToWindow() {
