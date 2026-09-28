@@ -241,7 +241,7 @@ private struct FileImagePreview: View {
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
+                .scaledToFit()
                 .frame(maxWidth: image.size.width, maxHeight: image.size.height)
             Text("\(Int(image.size.width)) × \(Int(image.size.height))")
                 .font(.system(size: 11).monospacedDigit())
