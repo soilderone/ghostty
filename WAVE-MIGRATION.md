@@ -10,7 +10,7 @@ Ghostty fork 里重新实现的功能。目标平台**只有 macOS 版**。
 
 按难度从低到高排列。前置项不论难度，最先做。
 
-状态取值：完成 / CI 构建通过（待实机验证）/ 待 CI 验证 / 进行中 / 暂缓；空白表示未开始。每项的细节（提交、验证情况、已知问题）见 `WAVE-CHANGELOG.md`。
+状态取值：完成 / CI 构建通过（待实机验证）/ 待 CI 验证 / 进行中 / 暂缓；空白表示未开始。每项的细节（提交、验证情况、已知问题）见 `WAVE-CHANGELOG.md`。装机后逐项检查的清单见 `WAVE-TESTING.md`。
 
 | #   | 功能                            | 难度  | 依赖  | 状态        |
 | --- | ------------------------------- | ----- | ----- | ----------- |
@@ -22,11 +22,11 @@ Ghostty fork 里重新实现的功能。目标平台**只有 macOS 版**。
 | 3   | 只在外框透出的毛玻璃            | 低–中 | —     | CI 构建通过 |
 | 4   | 界面主题、sage 外壳配色与强调色 | 低–中 | —     | CI 构建通过 |
 | 5   | 工具栏（tool rail）             | 低–中 | P3    | CI 构建通过 |
-| 6   | 分屏外框与标题栏                | 中    | —     | 待 CI 验证  |
+| 6   | 分屏外框与标题栏                | 中    | —     | CI 构建通过 |
 | 7   | 从失败命令问 AI                 | 中    | 6、11 | 暂缓        |
-| 8   | 胶囊 tab 栏                     | 高    | —     |             |
-| 9   | Git 视图                        | 高    | P3    |             |
-| 10  | 文件浏览器                      | 高    | P3    |             |
+| 8   | 胶囊 tab 栏                     | 高    | —     | 待 CI 验证  |
+| 9   | Git 视图                        | 高    | P3    | CI 构建通过 |
+| 10  | 文件浏览器                      | 高    | P3    | 待 CI 验证  |
 | 11  | AI 面板、工具与访问级别         | 极高  | P3    | 暂缓        |
 
 ---
@@ -96,7 +96,7 @@ Ghostty 已经把每个终端的 pwd（OSC 7）传到了 Swift 层。
 
 ### 1. tab 颜色标记 — 低
 
-**状态：完成（Ghostty 已覆盖，无代码改动）。** Ghostty 的 tab 右键菜单末尾有颜色色板（无 + 9 种系统色，当前选中项带勾），选中后 tab 标题旁显示色点，颜色随窗口恢复、撤销关闭 tab 保留，命令面板里也显示。与 Wave 的差异：Wave 用 7 种偏灰的 sage 配套色、给整个 tab 底色着色；Ghostty 用系统色、只显示色点。这两点属于外观，留给功能 4 / 8 决定是否对齐。
+**状态：完成（Ghostty 已覆盖，无代码改动）。** Ghostty 的 tab 右键菜单末尾有颜色色板（无 + 9 种系统色，当前选中项带勾），选中后 tab 标题旁显示色点，颜色随窗口恢复、撤销关闭 tab 保留，命令面板里也显示。与 Wave 的差异：Wave 用 7 种偏灰的 sage 配套色、给整个 tab 底色着色；Ghostty 用系统色、只显示色点。这两点属于外观，留给功能 4 / 8 决定是否对齐。功能 8 的胶囊 tab 栏已按 Wave 给整个 tab 着色，颜色仍用系统色；关掉 `macos-capsule-tabs` 时仍是原生 tab 上的色点。
 
 给 tab 标上选定的颜色，菜单里带颜色色块。Ghostty 看起来已经有 tab 颜色功能
 （`TerminalTabColor.swift`），先确认它是否已经覆盖。
@@ -158,7 +158,7 @@ AppKit 本身就会跟随系统外观和强调色，窗口失焦时控件也会�
 
 ### 6. 分屏外框与标题栏 — 中
 
-**状态：待 CI 验证。** 配置项 `macos-split-frame`（默认开），代码在 `macos/Sources/Features/Splits/SplitFrame.swift`，见 changelog。
+**状态：CI 构建通过（待实机验证）。** 配置项 `macos-split-frame`（默认开），代码在 `macos/Sources/Features/Splits/SplitFrame.swift`，见 changelog。
 
 **确定的设计**
 
@@ -205,6 +205,16 @@ Ghostty 已经会上报命令结束和退出码（依赖 shell 集成）。缺�
 
 ### 8. 胶囊 tab 栏 — 高（可选，风险大）
 
+**状态：待 CI 验证。** 配置项 `macos-capsule-tabs`（默认开，只作用于 `native` / `transparent`
+标题栏样式），代码在 `macos/Sources/Features/Terminal/Capsule Tabs/`，见 changelog。
+
+**确定的设计**
+
+- 保留原生 tab 模型，只换绘制：隐藏系统 tab 栏，每个窗口在标题栏的工具栏项里画整组胶囊，
+  红绿灯和胶囊同一行。tab 快捷键、Window 菜单、Show All Tabs、窗口恢复不变。
+- 这次只做横向 tab 栏，竖向不做。
+- tab 在栏内拖动排序；移到别的窗口用右键"移到新窗口"，不支持跨窗口拖动。
+
 Ghostty 用的是 macOS 原生窗口 tab（每个 tab 是 tab 组里的一个窗口）。要做出 Wave 的样子，
 就得自己画 tab 栏，也就意味着用 Ghostty 自己的 tab 模型替换原生 tab——窗口恢复、
 在窗口之间拖动 tab、tab 快捷键都会跟着变。可以考虑保留原生 tab、不做这一项。
@@ -220,6 +230,8 @@ Ghostty 用的是 macOS 原生窗口 tab（每个 tab 是 tab 组里的一个窗
 **Wave 参考：** `frontend/app/tab/tabbar.tsx`、`tab.scss`、`tabbar.scss`。
 
 ### 9. Git 视图 — 高
+
+**状态：CI 构建通过（待实机验证）。** 代码在 `macos/Sources/Features/Git/`，只读，见 changelog。
 
 在 Wave 里也是从零写的，但可以借用 Monaco 的 diff 编辑器。在 Ghostty 里 diff 查看器和
 commit graph 的绘制都得自己写。
@@ -240,6 +252,16 @@ commit graph 的绘制都得自己写。
 `frontend/app/view/gitview/`（`gitgraph.ts` 泳道布局、`gitdiff.tsx`、`gitview-model.ts`）。
 
 ### 10. 文件浏览器 — 高
+
+**状态：待 CI 验证。** 代码在 `macos/Sources/Features/Files/`，预览页面和打包的 JS 库在
+`macos/Preview/`，见 changelog。
+
+**确定的设计**
+
+- 不做内置编辑器：预览只读，另有"用默认程序打开"和"在终端中编辑"（往聚焦的终端里输入
+  `${EDITOR:-vi} 路径`，不回车）。
+- 预览用 WebView 加打包的 marked、highlight.js、mermaid，不联网。
+- 删除一律移到废纸篓。
 
 Wave 原本只有简单的目录预览，fork 把它做成了 IDE 风格的浏览器。在 Ghostty 里全部要新做。
 原生控件能省很多事（树形列表自带多选、拖拽和悬停展开文件夹，Quick Look 是系统自带的），
@@ -262,8 +284,7 @@ Wave 原本只有简单的目录预览，fork 把它做成了 IDE 风格的浏�
 - 空格键用 Quick Look 预览选中的文件。
 - 预览渲染：markdown（GitHub 风格表格）、跟随界面主题的代码高亮、mermaid 图、图片。
   文件类型图标带颜色。
-- 待定：Wave 的预览还能编辑文件（Monaco）。要决定 Ghostty 是否需要内置编辑器，
-  还是交给外部编辑器。
+- 已定（原为待定）：Wave 的预览还能编辑文件（Monaco）；Ghostty 不做内置编辑器，交给外部编辑器。
 
 **Wave 参考：** `frontend/app/view/preview/`（`preview-directory.tsx`、
 `preview-directory-utils.tsx`、`preview-path.ts`、`preview-model.tsx`），
