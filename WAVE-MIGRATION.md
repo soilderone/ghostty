@@ -24,9 +24,9 @@ Ghostty fork 里重新实现的功能。目标平台**只有 macOS 版**。
 | 5   | 工具栏（tool rail）             | 低–中 | P3    | CI 构建通过 |
 | 6   | 分屏外框与标题栏                | 中    | —     | CI 构建通过 |
 | 7   | 从失败命令问 AI                 | 中    | 6、11 | 暂缓        |
-| 8   | 胶囊 tab 栏                     | 高    | —     | 待 CI 验证  |
+| 8   | 胶囊 tab 栏                     | 高    | —     | CI 构建通过 |
 | 9   | Git 视图                        | 高    | P3    | CI 构建通过 |
-| 10  | 文件浏览器                      | 高    | P3    | 待 CI 验证  |
+| 10  | 文件浏览器                      | 高    | P3    | CI 构建通过 |
 | 11  | AI 面板、工具与访问级别         | 极高  | P3    | 暂缓        |
 
 ---
@@ -205,7 +205,7 @@ Ghostty 已经会上报命令结束和退出码（依赖 shell 集成）。缺�
 
 ### 8. 胶囊 tab 栏 — 高（可选，风险大）
 
-**状态：待 CI 验证。** 配置项 `macos-capsule-tabs`（默认开，只作用于 `native` / `transparent`
+**状态：CI 构建通过（待实机验证）。** 配置项 `macos-capsule-tabs`（默认开，只作用于 `native` / `transparent`
 标题栏样式），代码在 `macos/Sources/Features/Terminal/Capsule Tabs/`，见 changelog。
 
 **确定的设计**
@@ -253,7 +253,7 @@ commit graph 的绘制都得自己写。
 
 ### 10. 文件浏览器 — 高
 
-**状态：待 CI 验证。** 代码在 `macos/Sources/Features/Files/`，预览页面和打包的 JS 库在
+**状态：CI 构建通过（待实机验证）。** 代码在 `macos/Sources/Features/Files/`，预览页面和打包的 JS 库在
 `macos/Preview/`，见 changelog。
 
 **确定的设计**

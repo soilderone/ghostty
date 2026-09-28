@@ -48,7 +48,8 @@
 
 **提交：** `9844826`
 
-**验证状态：** 待 CI 验证。没有实机验证。
+**验证状态：** CI 构建通过（run 36438807331，提交 `1357f3e`，包含 `9844826`）：编译、签名校验、
+`+validate-config` 和 SwiftLint 都通过。没有实机验证。
 
 **没做 / 已知问题**
 
@@ -125,8 +126,8 @@
 **提交：** `dafc887`、`1357f3e`（修 SwiftLint）
 
 **验证状态：** `dafc887` 的构建（run 36436921272）编译、签名校验、`+validate-config` 都通过，
-SwiftLint 报了 1 处 `legacy_swiftui_aspect_ratio`，已在 `1357f3e` 修正，修正后的构建结果见功能 8
-条目（同一次构建）。预览页面（HTML/JS/CSS 加三个库）在本地无头 Chromium 里测过：表格、代码高亮、
+SwiftLint 报了 1 处 `legacy_swiftui_aspect_ratio`，已在 `1357f3e` 修正；修正后 run 36438807331
+（提交 `1357f3e`）的编译、签名校验、`+validate-config` 和 SwiftLint 全部通过。预览页面（HTML/JS/CSS 加三个库）在本地无头 Chromium 里测过：表格、代码高亮、
 mermaid 出图、原始 HTML 被转义、`javascript:` 链接被去掉，没有脚本错误。Swift 部分没有实机验证。
 
 **没做 / 已知问题**
