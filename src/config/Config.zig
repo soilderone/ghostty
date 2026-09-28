@@ -3527,6 +3527,24 @@ keybind: Keybinds = .{},
 /// The default value is true.
 @"macos-tool-rail": bool = true,
 
+/// If true, each terminal in a window is drawn as a card: a rounded frame
+/// with a thin border and a header showing the terminal's working directory
+/// (or its title when no directory is known), with buttons to zoom and close
+/// it. The cards are separated by small gaps that show the window background,
+/// which becomes a shade darker than the terminal background, and the files
+/// and git sidebars are drawn as cards too. The focused terminal's frame and
+/// header take the accent color (see `macos-accent-color`).
+///
+/// Dragging a header moves its terminal, like the drag handle does when this
+/// is false. The frame, its header and the gaps take space from the terminal,
+/// but `window-width` and `window-height` still size the terminal itself.
+///
+/// If false, terminals fill the window edge to edge and splits are separated
+/// by a thin divider. The quick terminal never has frames.
+///
+/// The default value is true.
+@"macos-split-frame": bool = true,
+
 /// If true, the macOS icon in the dock and app switcher will be hidden. This is
 /// mainly intended for those primarily using the quick-terminal mode.
 ///

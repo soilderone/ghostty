@@ -2,12 +2,42 @@ import AppKit
 import SwiftUI
 
 /// The content of one sidebar: its panel, with a separator along the edge it shares with the
-/// terminal. Sidebars are opaque, like the terminals beside them.
+/// terminal, or as a card like the terminals when they are framed. Sidebars are opaque, like
+/// the terminals beside them.
 struct SidebarColumnView: View {
     let edge: SidebarEdge
     @ObservedObject var sidebars: TerminalSidebars
 
     var body: some View {
+        if sidebars.framed {
+            card
+        } else {
+            flat
+        }
+    }
+
+    /// The panel as a card on the window canvas. The terminal side has no gap of its own
+    /// because the terminal cards already keep one from their edge.
+    @ViewBuilder
+    private var card: some View {
+        let shape = RoundedRectangle(cornerRadius: SplitFrame.cornerRadius, style: .continuous)
+
+        Group {
+            if let panel = sidebars.side(edge).panel {
+                // Sidebars hold no Metal content, so clipping them costs nothing extra.
+                SidebarPanelView(panel: panel, directory: sidebars.directory)
+                    .background(Color(nsColor: ChromePalette.panel))
+                    .clipShape(shape)
+                    .overlay(shape.strokeBorder(Color(nsColor: ChromePalette.strongSeparator), lineWidth: 0.5))
+            } else {
+                Color.clear
+            }
+        }
+        .padding(.vertical, SplitFrame.gap)
+        .padding(edge == .leading ? Edge.Set.leading : Edge.Set.trailing, SplitFrame.gap)
+    }
+
+    private var flat: some View {
         HStack(spacing: 0) {
             if edge == .trailing {
                 separator
@@ -105,7 +135,7 @@ struct SidebarHeader: View {
             }
             .font(.system(size: 12))
             .padding(.horizontal, 10)
-            .frame(height: 30)
+            .frame(height: SplitFrame.headerHeight)
             .background(Color(nsColor: ChromePalette.panelHeader))
 
             Rectangle()

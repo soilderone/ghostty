@@ -123,6 +123,13 @@ extension Ghostty {
             // Don't call super - the drag will be initiated in mouseDragged.
         }
 
+        override func mouseUp(with event: NSEvent) {
+            // A click that didn't start a drag focuses the surface, like clicking
+            // into it would. A drag session ends without a mouseUp.
+            guard let surfaceView else { return }
+            Ghostty.moveFocus(to: surfaceView)
+        }
+
         override func updateTrackingAreas() {
             super.updateTrackingAreas()
 

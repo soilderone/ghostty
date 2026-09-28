@@ -576,6 +576,9 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             self.derivedConfig = DerivedConfig(config)
 
             terminalViewContainer?.setToolRailVisible(config.macosToolRail)
+            if let terminalViewContainer {
+                syncSplitFrame(config, in: terminalViewContainer)
+            }
 
             // If we have no surfaces in our window (is that possible?) then we update
             // our window appearance based on the root config. If we have surfaces, we
@@ -589,6 +592,13 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         /// Surface-level config will be updated in
         /// ``Ghostty/Ghostty/SurfaceView/derivedConfig`` then
         /// ``TerminalController/focusedSurfaceDidChange(to:)``
+    }
+
+    /// Applies `macos-split-frame` to the parts outside the SwiftUI split tree, which reads the
+    /// config itself.
+    private func syncSplitFrame(_ config: Ghostty.Config, in container: TerminalViewContainer) {
+        sidebars.framed = config.macosSplitFrame
+        container.terminalChromeSize = config.macosSplitFrame ? SplitFrame.windowChromeSize : .zero
     }
 
     /// Update the accessory view of each tab according to the keyboard
@@ -1126,6 +1136,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         // Initialize our content view to the SwiftUI root
         let container = TerminalViewContainer {
             TerminalView(ghostty: ghostty, viewModel: self, delegate: self)
+                .environment(\.splitFramesAllowed, true)
         }
 
         // The sidebars and the tool rail go beside the split tree, outside of the SwiftUI view.
@@ -1145,6 +1156,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             Ghostty.moveFocus(to: focusedSurface)
         }
         container.setToolRailVisible(config.macosToolRail)
+        syncSplitFrame(config, in: container)
 
         // Set the initial content size on the container so that
         // intrinsicContentSize returns the correct value immediately,

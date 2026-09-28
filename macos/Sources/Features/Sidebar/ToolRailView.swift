@@ -21,9 +21,12 @@ struct ToolRailView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Rectangle()
-                .fill(Color(nsColor: ChromePalette.separator))
-                .frame(width: 1)
+            // Cards have their own borders and a gap to the rail.
+            if !sidebars.framed {
+                Rectangle()
+                    .fill(Color(nsColor: ChromePalette.separator))
+                    .frame(width: 1)
+            }
 
             // Drop the labels when the window is too short for all of them.
             ViewThatFits(in: .vertical) {

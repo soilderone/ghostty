@@ -29,6 +29,13 @@ struct TerminalSplitTreeView: View {
     let tree: SplitTree<Ghostty.SurfaceView>
     let action: (TerminalSplitOperation) -> Void
 
+    @EnvironmentObject private var ghostty: Ghostty.App
+    @Environment(\.splitFramesAllowed) private var splitFramesAllowed
+
+    private var showsFrames: Bool {
+        splitFramesAllowed && ghostty.config.macosSplitFrame
+    }
+
     var body: some View {
         if let node = tree.zoomed ?? tree.root {
             TerminalSplitSubtreeView(
@@ -40,12 +47,19 @@ struct TerminalSplitTreeView: View {
             // the tree structure of splits it could result in bad behaviors.
             // See: https://github.com/ghostty-org/ghostty/issues/7546
             .id(node.structuralIdentity)
+            // Each leaf pads itself by the other half, so cards are a gap apart
+            // from each other and from the window edge.
+            .padding(showsFrames ? SplitFrame.gap / 2 : 0)
+            .environment(\.showsSplitFrames, showsFrames)
+            .environment(\.splitFrameTree, SplitFrameTree(isSplit: tree.isSplit, isZoomed: tree.zoomed != nil))
         }
     }
 }
 
 private struct TerminalSplitSubtreeView: View {
     @EnvironmentObject var ghostty: Ghostty.App
+
+    @Environment(\.showsSplitFrames) private var showsFrames
 
     let node: SplitTree<Ghostty.SurfaceView>.Node
     var isRoot: Bool = false
@@ -69,7 +83,8 @@ private struct TerminalSplitSubtreeView: View {
                 }, set: {
                     action(.resize(.init(node: node, ratio: $0)))
                 }),
-                dividerColor: ghostty.config.splitDividerColor,
+                // Between cards the gap is the divider; it still resizes.
+                dividerColor: showsFrames ? .clear : ghostty.config.splitDividerColor,
                 resizeIncrements: .init(width: 1, height: 1),
                 left: {
                     TerminalSplitSubtreeView(node: split.left, action: action)
@@ -91,14 +106,14 @@ private struct TerminalSplitLeaf: View {
     let isSplit: Bool
     let action: (TerminalSplitOperation) -> Void
 
+    @Environment(\.showsSplitFrames) private var showsFrames
+
     @State private var dropState: DropState = .idle
     @State private var isSelfDragging: Bool = false
 
     var body: some View {
         GeometryReader { geometry in
-            Ghostty.InspectableSurface(
-                surfaceView: surfaceView,
-                isSplit: isSplit)
+            leafContent
             .background {
                 // If we're dragging ourself, we hide the entire drop zone. This makes
                 // it so that a released drop animates back to its source properly
@@ -116,6 +131,9 @@ private struct TerminalSplitLeaf: View {
             .overlay {
                 if !isSelfDragging, case .dropping(let zone) = dropState {
                     zone.overlay(in: geometry)
+                        .clipShape(RoundedRectangle(
+                            cornerRadius: showsFrames ? SplitFrame.cornerRadius : 0,
+                            style: .continuous))
                         .allowsHitTesting(false)
                 }
             }
@@ -127,6 +145,17 @@ private struct TerminalSplitLeaf: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Terminal pane")
+        }
+        .padding(showsFrames ? SplitFrame.gap / 2 : 0)
+    }
+
+    @ViewBuilder
+    private var leafContent: some View {
+        let surface = Ghostty.InspectableSurface(surfaceView: surfaceView, isSplit: isSplit)
+        if showsFrames {
+            SplitCard(surfaceView: surfaceView) { surface }
+        } else {
+            surface
         }
     }
 

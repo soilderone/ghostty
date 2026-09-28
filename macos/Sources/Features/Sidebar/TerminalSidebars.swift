@@ -71,6 +71,9 @@ final class TerminalSidebars: ObservableObject {
     /// or nil if it hasn't reported one. Panels open here.
     @Published private(set) var directory: URL?
 
+    /// Whether the sidebars are drawn as cards, like the terminals with `macos-split-frame`.
+    @Published var framed: Bool = false
+
     init() {
         leading = Side(panel: nil, width: Self.savedWidth(for: .leading))
         trailing = Side(panel: nil, width: Self.savedWidth(for: .trailing))

@@ -610,7 +610,12 @@ class TerminalWindow: NSWindow {
             if let surface {
                 let backgroundColor = surface.backgroundColor ?? surface.derivedConfig.backgroundColor
                 let alpha = surface.derivedConfig.backgroundOpacity.clamped(to: 0.001...1)
-                return NSColor(backgroundColor).withAlphaComponent(alpha)
+                let color = NSColor(backgroundColor).withAlphaComponent(alpha)
+
+                // With split frames the window shows the canvas around the terminal cards,
+                // in the gaps and behind the titlebar.
+                guard surface.derivedConfig.macosSplitFrame else { return color }
+                return ChromePalette.canvas(behind: color)
             }
         }
 

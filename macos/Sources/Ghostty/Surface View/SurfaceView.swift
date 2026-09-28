@@ -24,6 +24,7 @@ extension Ghostty {
 
         @EnvironmentObject private var ghostty: Ghostty.App
         @Environment(\.ghosttyLastFocusedSurface) private var lastFocusedSurface
+        @Environment(\.showsSplitFrames) private var showsSplitFrames
 
         private var isFocusedSurface: Bool {
             surfaceFocus || lastFocusedSurface?.value === surfaceView
@@ -162,11 +163,14 @@ extension Ghostty {
                 }
 
                 // Grab handle for dragging the window. We want this to appear at the very
-                // top Z-index os it isn't faded by the unfocused overlay.
-                SurfaceGrabHandle(
-                    surfaceView: surfaceView,
-                    dragHandle: ghostty.config.dragHandle,
-                )
+                // top Z-index os it isn't faded by the unfocused overlay. With split frames
+                // the card's header is the handle instead.
+                if !showsSplitFrames {
+                    SurfaceGrabHandle(
+                        surfaceView: surfaceView,
+                        dragHandle: ghostty.config.dragHandle,
+                    )
+                }
             }
         }
     }

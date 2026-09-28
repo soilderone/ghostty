@@ -103,6 +103,62 @@ enum ChromePalette {
     }
 }
 
+// MARK: Shades of a Terminal Background
+
+extension ChromePalette {
+    /// The window canvas around terminal cards (`macos-split-frame`): the Sage canvas behind the
+    /// Sage themes and a shade darker than the background behind any other theme, so the cards
+    /// stand out from it. The background's alpha is kept.
+    static func canvas(behind background: NSColor) -> NSColor {
+        shade(
+            of: background,
+            sage: (dark: 0x111713, light: 0xE9ECE5),
+            dark: (fraction: 0.28, target: .black),
+            light: (fraction: 0.075, target: .black))
+    }
+
+    /// The header band of a terminal card: the Sage panel header on the Sage themes and a shade
+    /// lifted off the background on any other theme. The background's alpha is kept.
+    static func header(over background: NSColor) -> NSColor {
+        shade(
+            of: background,
+            sage: (dark: 0x1C2420, light: 0xF5F7F2),
+            dark: (fraction: 0.025, target: .white),
+            light: (fraction: 0.03, target: .black))
+    }
+
+    private static func shade(
+        of background: NSColor,
+        sage: (dark: UInt32, light: UInt32),
+        dark: (fraction: CGFloat, target: NSColor),
+        light: (fraction: CGFloat, target: NSColor)
+    ) -> NSColor {
+        guard let color = background.usingColorSpace(.sRGB) else { return background }
+        let alpha = color.alphaComponent
+
+        // The Sage themes get Wave's exact values rather than an approximation.
+        switch hex(of: color) {
+        case 0x181F1B: return rgb(sage.dark, alpha: alpha)
+        case 0xFCFDFA: return rgb(sage.light, alpha: alpha)
+        default: break
+        }
+
+        let (fraction, target) = color.isLightColor ? light : dark
+        let opaque = color.withAlphaComponent(1)
+        let shaded = target.usingColorSpace(.sRGB).flatMap { opaque.blended(withFraction: fraction, of: $0) }
+        return (shaded ?? opaque).withAlphaComponent(alpha)
+    }
+
+    private static func hex(of color: NSColor) -> UInt32 {
+        func component(_ value: CGFloat) -> UInt32 {
+            UInt32((min(max(value, 0), 1) * 255).rounded())
+        }
+        return component(color.redComponent) << 16 |
+            component(color.greenComponent) << 8 |
+            component(color.blueComponent)
+    }
+}
+
 // MARK: Helpers
 
 extension ChromePalette {

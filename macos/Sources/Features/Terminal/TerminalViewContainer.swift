@@ -28,6 +28,9 @@ class TerminalViewContainer: NSView {
     /// The window's sidebars, for windows that have them.
     private var sidebarsLayout: TerminalSidebarsLayout?
 
+    /// The space the split frames take around the terminal (`macos-split-frame`).
+    var terminalChromeSize: NSSize = .zero
+
     var windowThemeFrameView: NSView? {
         window?.contentView?.superview
     }
@@ -68,10 +71,11 @@ class TerminalViewContainer: NSView {
             size = initialContentSize
         }
 
-        // `window-width` counts terminal columns, so the sidebars and the tool rail
-        // add to it.
-        if let sidebarsLayout, size.width > 0 {
-            size.width += sidebarsLayout.widthBesideTerminal
+        // `window-width` and `window-height` count terminal columns and rows, so the
+        // split frames, the sidebars and the tool rail add to them.
+        if size.width > 0 && size.height > 0 {
+            size.width += terminalChromeSize.width + (sidebarsLayout?.widthBesideTerminal ?? 0)
+            size.height += terminalChromeSize.height
         }
         return size
     }
