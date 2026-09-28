@@ -893,9 +893,17 @@ class BaseTerminalController: NSWindowController,
                 .map { [weak self] in self?.computeTitle(title: $0, bell: $1) ?? "" }
                 .sink { [weak self] in self?.titleDidChange(to: $0) }
                 .store(in: &focusedSurfaceCancellables)
+
+            // Follow the pwd of the same surface. Unlike `pwdDidChange`, this keeps
+            // reporting while focus is outside the split tree, such as in a sidebar.
+            titleSurface.$pwd
+                .removeDuplicates()
+                .sink { [weak self] in self?.focusedPwdDidChange(to: $0) }
+                .store(in: &focusedSurfaceCancellables)
         } else {
             // There is no surface to listen to titles for.
             titleDidChange(to: "👻")
+            focusedPwdDidChange(to: nil)
         }
     }
 
@@ -927,11 +935,30 @@ class BaseTerminalController: NSWindowController,
     }
 
     func pwdDidChange(to: URL?) {
+        // SwiftUI reports nil whenever focus is outside the split tree, such as in a
+        // sidebar, which would hide the proxy icon. The focused surface keeps its pwd
+        // then, and real changes to it arrive through `focusedPwdDidChange`.
+        guard let to else { return }
+        syncRepresentedURL(to)
+    }
+
+    /// Called with the pwd of the focused surface (the last focused one while focus is
+    /// outside the split tree) whenever it or the focused surface changes.
+    func focusedPwdDidChange(to pwd: String?) {
+        // An empty pwd means the shell no longer knows its directory.
+        guard let pwd, !pwd.isEmpty else {
+            syncRepresentedURL(nil)
+            return
+        }
+        syncRepresentedURL(URL(fileURLWithPath: pwd))
+    }
+
+    private func syncRepresentedURL(_ url: URL?) {
         guard let window else { return }
 
         if derivedConfig.macosTitlebarProxyIcon == .visible {
-            // Use the 'to' URL directly
-            window.representedURL = to
+            // Use the URL directly
+            window.representedURL = url
         } else {
             window.representedURL = nil
         }

@@ -76,6 +76,9 @@ final class TerminalRestorableState: TerminalRestorable {
     var titleOverride: String? {
         internalState.titleOverride
     }
+    var sidebars: TerminalSidebars.State? {
+        internalState.sidebars
+    }
 
     /// Internal State we use to perform unit tests
     ///
@@ -170,6 +173,11 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
 
         // Restore the tab title override
         c.titleOverride = state.titleOverride
+
+        // Restore the sidebars. States saved without them leave them closed.
+        if let sidebars = state.sidebars {
+            c.sidebars.state = sidebars
+        }
 
         // Setup our restored state on the controller
         // Find the focused surface in surfaceTree

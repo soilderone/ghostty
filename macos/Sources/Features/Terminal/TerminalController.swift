@@ -61,6 +61,12 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// The notification cancellable for focused surface property changes.
     private var surfaceAppearanceCancellables: Set<AnyCancellable> = []
 
+    /// The sidebars beside the split tree.
+    let sidebars = TerminalSidebars()
+
+    /// Invalidates the restorable state when the sidebars open, close or resize.
+    private var sidebarsCancellable: AnyCancellable?
+
     init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
          withSurfaceTree tree: SplitTree<Ghostty.SurfaceView>? = nil,
@@ -133,6 +139,11 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             name: .ghosttyCloseWindow,
             object: nil
         )
+
+        sidebarsCancellable = sidebars.sidePublisher(.leading)
+            .merge(with: sidebars.sidePublisher(.trailing))
+            .dropFirst(2)
+            .sink { [weak self] _ in self?.invalidateRestorableState() }
     }
 
     required init?(coder: NSCoder) {
@@ -1017,10 +1028,12 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         let tabIndex: Int?
         weak var tabGroup: NSWindowTabGroup?
         let tabColor: TerminalTabColor
+        let sidebars: TerminalSidebars.State
     }
 
     convenience init(_ ghostty: Ghostty.App, with undoState: UndoState) {
         self.init(ghostty, withSurfaceTree: undoState.surfaceTree)
+        sidebars.state = undoState.sidebars
 
         // Show the window and restore its frame
         showWindow(nil)
@@ -1072,7 +1085,8 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             focusedSurface: focusedSurface?.id,
             tabIndex: window.tabGroup?.windows.firstIndex(of: window),
             tabGroup: window.tabGroup,
-            tabColor: (window as? TerminalWindow)?.tabColor ?? .none)
+            tabColor: (window as? TerminalWindow)?.tabColor ?? .none,
+            sidebars: sidebars.state)
     }
 
     // MARK: - NSWindowController
@@ -1110,6 +1124,15 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         // Initialize our content view to the SwiftUI root
         let container = TerminalViewContainer {
             TerminalView(ghostty: ghostty, viewModel: self, delegate: self)
+        }
+
+        // The sidebars go beside the split tree, outside of the SwiftUI view.
+        container.installSidebars(
+            sidebars,
+            extendsIntoTitlebar: config.macosTitlebarStyle == .hidden
+        ) { [weak self] in
+            guard let focusedSurface = self?.focusedSurface else { return }
+            Ghostty.moveFocus(to: focusedSurface)
         }
 
         // Set the initial content size on the container so that
@@ -1503,6 +1526,14 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         ghostty.toggleTerminalInspector(surface: surface)
     }
 
+    @IBAction func toggleFilesSidebar(_ sender: Any?) {
+        sidebars.toggle(.files)
+    }
+
+    @IBAction func toggleGitSidebar(_ sender: Any?) {
+        sidebars.toggle(.git)
+    }
+
     // MARK: - TerminalViewDelegate
 
     override func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {
@@ -1525,6 +1556,11 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             .dropFirst()
             .sink { [weak self, weak focusedSurface] _ in self?.syncAppearanceOnPropertyChange(focusedSurface) }
             .store(in: &surfaceAppearanceCancellables)
+    }
+
+    override func focusedPwdDidChange(to pwd: String?) {
+        super.focusedPwdDidChange(to: pwd)
+        sidebars.directoryDidChange(to: pwd)
     }
 
     private func syncAppearanceOnPropertyChange(_ surface: Ghostty.SurfaceView?) {
@@ -1755,6 +1791,14 @@ extension TerminalController {
             // If our window is already the default size or we don't have a
             // default size, then disable.
             return defaultSize?.isChanged(for: window) ?? false
+
+        case #selector(toggleFilesSidebar):
+            item.state = sidebars.isOpen(.files) ? .on : .off
+            return true
+
+        case #selector(toggleGitSidebar):
+            item.state = sidebars.isOpen(.git) ? .on : .off
+            return true
 
         default:
             return super.validateMenuItem(item)

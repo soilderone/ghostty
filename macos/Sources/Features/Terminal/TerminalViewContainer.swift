@@ -22,6 +22,12 @@ class TerminalViewContainer: NSView {
         }
     }
 
+    /// Pins the terminal view's leading and trailing edges to ours, until sidebars take over.
+    private var terminalHorizontalConstraints: [NSLayoutConstraint] = []
+
+    /// The window's sidebars, for windows that have them.
+    private var sidebarsLayout: TerminalSidebarsLayout?
+
     var windowThemeFrameView: NSView? {
         window?.contentView?.superview
     }
@@ -52,27 +58,56 @@ class TerminalViewContainer: NSView {
     var initialContentSize: NSSize?
 
     override var intrinsicContentSize: NSSize {
-        let hostingSize = terminalView.intrinsicContentSize
+        var size = terminalView.intrinsicContentSize
         // The hosting view returns a valid size once SwiftUI has laid out
         // with the correct idealWidth/idealHeight. Before that (when
         // @FocusedValue hasn't propagated), it returns a tiny default.
         // Fall back to initialContentSize in that case.
         if let initialContentSize,
-           hostingSize.width < initialContentSize.width || hostingSize.height < initialContentSize.height {
-            return initialContentSize
+           size.width < initialContentSize.width || size.height < initialContentSize.height {
+            size = initialContentSize
         }
-        return hostingSize
+
+        // `window-width` counts terminal columns, so the sidebars' width adds to it.
+        if let sidebarsLayout, size.width > 0 {
+            size.width += sidebarsLayout.widthBesideTerminal
+        }
+        return size
     }
 
     private func setup() {
         addSubview(terminalView)
         terminalView.translatesAutoresizingMaskIntoConstraints = false
+        terminalHorizontalConstraints = [
+            terminalView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            terminalView.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ]
         NSLayoutConstraint.activate([
             terminalView.topAnchor.constraint(equalTo: topAnchor),
-            terminalView.leadingAnchor.constraint(equalTo: leadingAnchor),
             terminalView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            terminalView.trailingAnchor.constraint(equalTo: trailingAnchor),
-        ])
+        ] + terminalHorizontalConstraints)
+    }
+
+    /// Lays out the window's sidebars beside the terminal. Call this once, before the
+    /// container is added to its window.
+    ///
+    /// - Parameters:
+    ///   - extendsIntoTitlebar: Whether the terminal extends into the titlebar area (the
+    ///     hidden titlebar style).
+    ///   - returnFocus: Called when a sidebar closes while it has keyboard focus.
+    func installSidebars(
+        _ sidebars: TerminalSidebars,
+        extendsIntoTitlebar: Bool,
+        returnFocus: @escaping () -> Void
+    ) {
+        guard sidebarsLayout == nil else { return }
+        NSLayoutConstraint.deactivate(terminalHorizontalConstraints)
+        sidebarsLayout = TerminalSidebarsLayout(
+            container: self,
+            terminalView: terminalView,
+            sidebars: sidebars,
+            extendsIntoTitlebar: extendsIntoTitlebar,
+            returnFocus: returnFocus)
     }
 
     override func viewDidMoveToWindow() {
