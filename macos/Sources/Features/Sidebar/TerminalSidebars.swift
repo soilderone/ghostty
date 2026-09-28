@@ -74,6 +74,10 @@ final class TerminalSidebars: ObservableObject {
     /// Whether the sidebars are drawn as cards, like the terminals with `macos-split-frame`.
     @Published var framed: Bool = false
 
+    /// The Git view's state. It is kept while its sidebar is closed so reopening it is instant,
+    /// and it only runs git while it is on screen.
+    private(set) lazy var git = GitViewModel()
+
     init() {
         leading = Side(panel: nil, width: Self.savedWidth(for: .leading))
         trailing = Side(panel: nil, width: Self.savedWidth(for: .trailing))

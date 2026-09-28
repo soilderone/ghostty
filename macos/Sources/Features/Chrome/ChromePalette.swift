@@ -92,6 +92,19 @@ enum ChromePalette {
     static let gitAccent = dynamic(dark: 0xE3906F, light: 0xB0583A)
     static let aiAccent = dynamic(dark: 0xB3A0E6, light: 0x6F5FA6)
 
+    /// The colors of the lanes in the Git view's commit graph, taken from the Sage terminal
+    /// palette so the graph matches the terminals next to it.
+    static let graphLanes: [NSColor] = [
+        dynamic(dark: 0x9CC487, light: 0x2F6343),
+        dynamic(dark: 0x85AACB, light: 0x3F6F93),
+        dynamic(dark: 0xD6A85F, light: 0x9C6B2F),
+        dynamic(dark: 0xCC72CA, light: 0x7C4F95),
+        dynamic(dark: 0x74A7CB, light: 0x2F7D74),
+        dynamic(dark: 0xE3906F, light: 0xB0583A),
+        dynamic(dark: 0xCBCA9B, light: 0x8A6A12),
+        dynamic(dark: 0xB3A0E6, light: 0x6F5FA6),
+    ]
+
     /// The fixed accent of a view kind, or nil for kinds that use the chrome accent.
     static func kindAccent(_ kind: ViewKind) -> NSColor? {
         switch kind {

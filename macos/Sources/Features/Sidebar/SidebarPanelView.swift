@@ -25,7 +25,7 @@ struct SidebarColumnView: View {
         Group {
             if let panel = sidebars.side(edge).panel {
                 // Sidebars hold no Metal content, so clipping them costs nothing extra.
-                SidebarPanelView(panel: panel, directory: sidebars.directory)
+                SidebarPanelView(panel: panel, sidebars: sidebars)
                     .background(Color(nsColor: ChromePalette.panel))
                     .clipShape(shape)
                     .overlay(shape.strokeBorder(Color(nsColor: ChromePalette.strongSeparator), lineWidth: 0.5))
@@ -44,7 +44,7 @@ struct SidebarColumnView: View {
             }
 
             if let panel = sidebars.side(edge).panel {
-                SidebarPanelView(panel: panel, directory: sidebars.directory)
+                SidebarPanelView(panel: panel, sidebars: sidebars)
             } else {
                 Spacer(minLength: 0)
             }
@@ -63,49 +63,42 @@ struct SidebarColumnView: View {
     }
 }
 
-/// A panel in a sidebar. The files and git panels aren't built yet (features 10 and 9), so this
-/// shows the header they'll have and where they will open.
+/// A panel in a sidebar, under its header. The files panel isn't built yet (feature 10), so it
+/// shows where it will open.
 struct SidebarPanelView: View {
     let panel: SidebarPanel
-    let directory: URL?
+    @ObservedObject var sidebars: TerminalSidebars
 
     var body: some View {
         VStack(spacing: 0) {
-            SidebarHeader(panel: panel, directory: directory)
+            SidebarHeader(panel: panel, directory: sidebars.directory)
 
-            VStack(spacing: 6) {
-                Image(systemName: panel.symbol)
-                    .font(.system(size: 22))
-                    .foregroundColor(Color(nsColor: ChromePalette.tertiaryText))
-                Text(placeholderTitle)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(Color(nsColor: ChromePalette.secondaryText))
-                Text(placeholderDetail)
-                    .font(.system(size: 11))
-                    .foregroundColor(Color(nsColor: ChromePalette.tertiaryText))
+            switch panel {
+            case .git:
+                GitView(model: sidebars.git, directory: sidebars.directory)
+            case .files:
+                placeholder
             }
-            .multilineTextAlignment(.center)
-            .padding(16)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
-    private var placeholderTitle: String {
-        switch panel {
-        case .files: return "The file browser isn't built yet."
-        case .git: return "The Git view isn't built yet."
+    private var placeholder: some View {
+        VStack(spacing: 6) {
+            Image(systemName: panel.symbol)
+                .font(.system(size: 22))
+                .foregroundColor(Color(nsColor: ChromePalette.tertiaryText))
+            Text("The file browser isn't built yet.")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(Color(nsColor: ChromePalette.secondaryText))
+            Text(sidebars.directory == nil
+                ? "The focused terminal hasn't reported its directory. Shell integration reports it at each prompt."
+                : "It will open at the focused terminal's directory.")
+                .font(.system(size: 11))
+                .foregroundColor(Color(nsColor: ChromePalette.tertiaryText))
         }
-    }
-
-    private var placeholderDetail: String {
-        guard directory != nil else {
-            return "The focused terminal hasn't reported its directory. Shell integration reports it at each prompt."
-        }
-
-        switch panel {
-        case .files: return "It will open at the focused terminal's directory."
-        case .git: return "It will open the repository of the focused terminal's directory."
-        }
+        .multilineTextAlignment(.center)
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
