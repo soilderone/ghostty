@@ -78,6 +78,9 @@ final class TerminalSidebars: ObservableObject {
     /// and it only runs git while it is on screen.
     private(set) lazy var git = GitViewModel()
 
+    /// The file browser's state, kept while its sidebar is closed so it reopens where it was.
+    private(set) lazy var files = FileBrowserModel()
+
     init() {
         leading = Side(panel: nil, width: Self.savedWidth(for: .leading))
         trailing = Side(panel: nil, width: Self.savedWidth(for: .trailing))

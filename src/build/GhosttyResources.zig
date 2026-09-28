@@ -159,6 +159,18 @@ pub fn init(b: *std.Build, cfg: *const Config, deps: *const SharedDeps) !Ghostty
         try steps.append(b.allocator, &install_step.step);
     }
 
+    // The page the macOS file browser renders previews in, with the
+    // libraries it renders markdown, code and diagrams with.
+    if (cfg.target.result.os.tag == .macos) {
+        const install_step = b.addInstallDirectory(.{
+            .source_dir = b.path("macos/Preview"),
+            .install_dir = .{ .custom = "share" },
+            .install_subdir = b.pathJoin(&.{ "ghostty", "preview" }),
+            .exclude_extensions = &.{".md"},
+        });
+        try steps.append(b.allocator, &install_step.step);
+    }
+
     // Fish shell completions
     {
         const run = b.addRunArtifact(build_data_exe);

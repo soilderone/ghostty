@@ -1,0 +1,193 @@
+/* The file browser's preview, in the Sage colors. Light by default; the app adds the
+   "dark" class on <html> to follow the window's appearance. */
+
+:root {
+  --bg: #fcfdfa;
+  --text: #1f2722;
+  --text-2: #56625a;
+  --text-3: #606b62;
+  --line: #dbe0d6;
+  --raise: #f5f7f2;
+  --link: #2f6343;
+
+  --tok-keyword: #7c4f95;
+  --tok-string: #3f7a4d;
+  --tok-number: #8a6a12;
+  --tok-comment: #788078;
+  --tok-title: #3f6f93;
+  --tok-type: #2f7d74;
+  --tok-attr: #9c362e;
+  --tok-meta: #9c6b2f;
+  --tok-added: #3f7a4d;
+  --tok-removed: #b4453c;
+}
+
+:root.dark {
+  --bg: #181f1b;
+  --text: #d4dbd2;
+  --text-2: #a4b1a5;
+  --text-3: #7e8c82;
+  --line: #2b362e;
+  --raise: #1c2420;
+  --link: #9cc487;
+
+  --tok-keyword: #cc72ca;
+  --tok-string: #76c266;
+  --tok-number: #cbca9b;
+  --tok-comment: #7e8c82;
+  --tok-title: #85aacb;
+  --tok-type: #74a7cb;
+  --tok-attr: #cc9d97;
+  --tok-meta: #d6a85f;
+  --tok-added: #8fbf78;
+  --tok-removed: #e08c85;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.55 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+}
+
+code,
+pre {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+}
+
+/* Markdown */
+
+#content.markdown {
+  padding: 14px 18px 24px;
+  max-width: 860px;
+}
+
+.markdown h1,
+.markdown h2 {
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--line);
+}
+
+.markdown h1 { font-size: 1.6em; margin: 0.6em 0 0.5em; }
+.markdown h2 { font-size: 1.35em; margin: 1.2em 0 0.5em; }
+.markdown h3 { font-size: 1.15em; margin: 1.1em 0 0.4em; }
+.markdown a { color: var(--link); text-decoration: none; }
+.markdown a:hover { text-decoration: underline; }
+.markdown img { max-width: 100%; }
+.markdown hr { border: 0; border-top: 1px solid var(--line); margin: 1.5em 0; }
+
+.markdown blockquote {
+  margin: 0.8em 0;
+  padding: 0 0.9em;
+  color: var(--text-2);
+  border-left: 3px solid var(--line);
+}
+
+.markdown :not(pre) > code {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--raise);
+}
+
+.markdown pre {
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: var(--raise);
+}
+
+.markdown table {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  display: block;
+  overflow-x: auto;
+}
+
+.markdown th,
+.markdown td {
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+}
+
+.markdown th { background: var(--raise); font-weight: 600; }
+.markdown tr:nth-child(2n) td { background: color-mix(in srgb, var(--raise) 55%, transparent); }
+
+.markdown .mermaid {
+  margin: 0.8em 0;
+  text-align: center;
+}
+
+.markdown .diagram-error {
+  padding: 8px 10px;
+  color: var(--tok-removed);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  text-align: left;
+  white-space: pre-wrap;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+/* Code and text */
+
+.code {
+  display: flex;
+  align-items: flex-start;
+  min-width: max-content;
+}
+
+.code pre {
+  margin: 0;
+  padding: 8px 0;
+  line-height: 1.5;
+}
+
+.code .gutter {
+  position: sticky;
+  left: 0;
+  padding: 8px 10px 8px 12px;
+  text-align: right;
+  color: var(--text-3);
+  background: var(--bg);
+  border-right: 1px solid var(--line);
+  user-select: none;
+}
+
+.code .source {
+  padding-left: 12px;
+  padding-right: 16px;
+}
+
+/* highlight.js tokens */
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-doctag { color: var(--tok-keyword); }
+.hljs-string,
+.hljs-regexp,
+.hljs-symbol,
+.hljs-template-tag { color: var(--tok-string); }
+.hljs-number,
+.hljs-bullet { color: var(--tok-number); }
+.hljs-comment,
+.hljs-quote { color: var(--tok-comment); font-style: italic; }
+.hljs-title,
+.hljs-section,
+.hljs-name { color: var(--tok-title); }
+.hljs-type,
+.hljs-built_in,
+.hljs-class .hljs-title { color: var(--tok-type); }
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable.language_,
+.hljs-selector-class,
+.hljs-selector-id { color: var(--tok-attr); }
+.hljs-meta,
+.hljs-link { color: var(--tok-meta); }
+.hljs-addition { color: var(--tok-added); }
+.hljs-deletion { color: var(--tok-removed); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }

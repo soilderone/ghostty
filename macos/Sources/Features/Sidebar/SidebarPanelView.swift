@@ -63,8 +63,7 @@ struct SidebarColumnView: View {
     }
 }
 
-/// A panel in a sidebar, under its header. The files panel isn't built yet (feature 10), so it
-/// shows where it will open.
+/// A panel in a sidebar, under its header.
 struct SidebarPanelView: View {
     let panel: SidebarPanel
     @ObservedObject var sidebars: TerminalSidebars
@@ -77,28 +76,9 @@ struct SidebarPanelView: View {
             case .git:
                 GitView(model: sidebars.git, directory: sidebars.directory)
             case .files:
-                placeholder
+                FileBrowserView(model: sidebars.files, directory: sidebars.directory)
             }
         }
-    }
-
-    private var placeholder: some View {
-        VStack(spacing: 6) {
-            Image(systemName: panel.symbol)
-                .font(.system(size: 22))
-                .foregroundColor(Color(nsColor: ChromePalette.tertiaryText))
-            Text("The file browser isn't built yet.")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(Color(nsColor: ChromePalette.secondaryText))
-            Text(sidebars.directory == nil
-                ? "The focused terminal hasn't reported its directory. Shell integration reports it at each prompt."
-                : "It will open at the focused terminal's directory.")
-                .font(.system(size: 11))
-                .foregroundColor(Color(nsColor: ChromePalette.tertiaryText))
-        }
-        .multilineTextAlignment(.center)
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

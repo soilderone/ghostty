@@ -1,0 +1,141 @@
+import AppKit
+import SwiftUI
+import WebKit
+
+/// What the preview page renders.
+struct FilePreviewDocument: Equatable {
+    enum Kind: String {
+        case markdown
+        case code
+        case text
+    }
+
+    let kind: Kind
+    let text: String
+
+    /// The highlight.js language, when known.
+    let language: String?
+
+    /// The file's folder, so relative links and images resolve.
+    let base: URL
+}
+
+/// Renders markdown, code and text in the bundled preview page (`macos/Preview`) with marked,
+/// highlight.js and mermaid.
+///
+/// Previewed files never run scripts: raw HTML in markdown is shown as text, the page's
+/// content security policy blocks inline scripts and the network, and link clicks open outside
+/// the page.
+struct FilePreviewWebView: NSViewRepresentable {
+    let document: FilePreviewDocument
+
+    /// Called for links to local files.
+    let onOpenFile: (URL) -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// The preview page in the app bundle.
+    static let pageURL: URL? = {
+        guard let resources = Bundle.main.resourceURL else { return nil }
+        let url = resources.appendingPathComponent("ghostty/preview/preview.html")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }()
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onOpenFile: onOpenFile)
+    }
+
+    func makeNSView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = context.coordinator
+        webView.setValue(false, forKey: "drawsBackground")
+        context.coordinator.webView = webView
+
+        if let page = Self.pageURL {
+            // Read access to everything so images next to a markdown file load.
+            webView.loadFileURL(page, allowingReadAccessTo: URL(fileURLWithPath: "/"))
+        }
+        return webView
+    }
+
+    func updateNSView(_ webView: WKWebView, context: Context) {
+        context.coordinator.onOpenFile = onOpenFile
+        context.coordinator.show(document, dark: colorScheme == .dark)
+    }
+
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        weak var webView: WKWebView?
+        var onOpenFile: (URL) -> Void
+
+        private var isLoaded = false
+        private var pending: (document: FilePreviewDocument, dark: Bool)?
+        private var shown: (document: FilePreviewDocument, dark: Bool)?
+
+        init(onOpenFile: @escaping (URL) -> Void) {
+            self.onOpenFile = onOpenFile
+        }
+
+        func show(_ document: FilePreviewDocument, dark: Bool) {
+            if let shown, shown.document == document, shown.dark == dark { return }
+            pending = (document, dark)
+            renderPending()
+        }
+
+        private func renderPending() {
+            guard isLoaded, let webView, let pending else { return }
+            self.pending = nil
+            shown = pending
+
+            let payload: [String: Any] = [
+                "kind": pending.document.kind.rawValue,
+                "text": pending.document.text,
+                "language": pending.document.language ?? "",
+                "base": pending.document.base.absoluteString,
+                "dark": pending.dark,
+            ]
+            webView.callAsyncJavaScript(
+                "window.ghosttyPreview.render(payload)",
+                arguments: ["payload": payload],
+                in: nil,
+                in: .page,
+                completionHandler: nil)
+        }
+
+        // MARK: WKNavigationDelegate
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            isLoaded = true
+            renderPending()
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
+            // Only the preview page itself loads here; anchors within it scroll.
+            guard navigationAction.navigationType == .linkActivated,
+                  let url = navigationAction.request.url else {
+                decisionHandler(.allow)
+                return
+            }
+
+            if let current = webView.url, url.absoluteString.hasPrefix(current.absoluteString + "#") || url.fragment != nil && url.path == current.path {
+                decisionHandler(.allow)
+                return
+            }
+
+            decisionHandler(.cancel)
+            switch url.scheme?.lowercased() {
+            case "http", "https", "mailto":
+                NSWorkspace.shared.open(url)
+            case "file":
+                onOpenFile(url)
+            default:
+                break
+            }
+        }
+    }
+}

@@ -1158,6 +1158,10 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         container.setToolRailVisible(config.macosToolRail)
         syncSplitFrame(config, in: container)
 
+        sidebars.files.actions = .init(
+            openTerminal: { [weak self] in self?.openTerminalTab(in: $0) },
+            typeInTerminal: { [weak self] in self?.typeInFocusedSurface($0) })
+
         // Set the initial content size on the container so that
         // intrinsicContentSize returns the correct value immediately,
         // without waiting for @FocusedValue to propagate through the
@@ -1555,6 +1559,21 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
     @IBAction func toggleGitSidebar(_ sender: Any?) {
         sidebars.toggle(.git)
+    }
+
+    /// Opens a tab with a terminal in a folder, for the file browser.
+    private func openTerminalTab(in directory: URL) {
+        var config = Ghostty.SurfaceConfiguration()
+        config.workingDirectory = directory.pathWithoutTrailingSlash
+        _ = TerminalController.newTab(ghostty, from: window, withBaseConfig: config)
+    }
+
+    /// Types text into the focused terminal without pressing return, and focuses it so the
+    /// user can review the text and run it.
+    private func typeInFocusedSurface(_ text: String) {
+        guard let focusedSurface else { return }
+        focusedSurface.surfaceModel?.sendText(text)
+        Ghostty.moveFocus(to: focusedSurface)
     }
 
     // MARK: - TerminalViewDelegate
