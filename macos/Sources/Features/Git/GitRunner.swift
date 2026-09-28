@@ -18,7 +18,7 @@ struct GitOutput {
     let truncated: Bool
 
     var text: String {
-        String(decoding: data, as: UTF8.self)
+        data.lossyUTF8String
     }
 }
 
@@ -149,7 +149,7 @@ enum GitRunner {
         }
 
         guard successCodes.contains(process.terminationStatus) else {
-            let message = String(decoding: errorData, as: UTF8.self)
+            let message = errorData.lossyUTF8String
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if message.contains("not a git repository") {
                 throw GitError.notARepository
