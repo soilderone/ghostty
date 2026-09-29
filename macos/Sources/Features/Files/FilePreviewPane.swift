@@ -5,6 +5,9 @@ import SwiftUI
 enum FilePreviewContent: Equatable {
     case document(FilePreviewDocument)
     case image(NSImage)
+
+    /// A PDF, sound or video, shown by the system's own players.
+    case media(URL, FilePreviewMedia)
     case directory
     case tooLarge(Int64)
     case binary
@@ -41,6 +44,11 @@ final class FilePreviewLoader: ObservableObject {
         }
         if values.isDirectory == true { return .directory }
 
+        // These aren't read here, and can be far larger than a text preview allows.
+        if let media = FilePreviewMedia(pathExtension: url.pathExtension) {
+            return .media(url, media)
+        }
+
         if FilePreviewDocument.imageExtensions.contains(url.pathExtension.lowercased()),
            let image = NSImage(contentsOf: url) {
             return .image(image)
@@ -70,7 +78,10 @@ extension FilePreviewDocument {
     private static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mdx"]
 
     /// Files shown as plain text, where guessing a language would only add noise.
-    private static let plainExtensions: Set<String> = ["", "txt", "text", "log", "csv", "tsv", "lock"]
+    private static let plainExtensions: Set<String> = ["", "txt", "text", "log", "lock"]
+
+    /// Delimited text shown as a table, and what separates its cells.
+    private static let tableDelimiters: [String: String] = ["csv": ",", "tsv": "\t"]
 
     /// Names and extensions that highlight.js doesn't know by those names. Any other
     /// extension is passed on as the language, since highlight.js knows most of them as
@@ -111,6 +122,13 @@ extension FilePreviewDocument {
             self.init(kind: .code, text: text, language: language, base: url.deletingLastPathComponent())
         } else if Self.markdownExtensions.contains(pathExtension) {
             self.init(kind: .markdown, text: text, language: nil, base: url.deletingLastPathComponent())
+        } else if let delimiter = Self.tableDelimiters[pathExtension] {
+            self.init(
+                kind: .table,
+                text: text,
+                language: nil,
+                delimiter: delimiter,
+                base: url.deletingLastPathComponent())
         } else if Self.plainExtensions.contains(pathExtension) {
             self.init(kind: .text, text: text, language: nil, base: url.deletingLastPathComponent())
         } else {
@@ -158,6 +176,8 @@ struct FilePreviewPane: View {
             }
         case .image(let image):
             FileImagePreview(image: image)
+        case .media(let mediaURL, let media):
+            FileMediaPreview(url: mediaURL, media: media)
         case .directory:
             FileMessage(symbol: "folder", title: "This is a folder")
         case .tooLarge(let size):

@@ -322,6 +322,10 @@ struct RemoteFileBrowserView: View {
                     .font(.system(size: 11).monospacedDigit())
             }
             .padding(16)
+        case .media:
+            // The system's PDF and media viewers need a local file. Remote PDFs show as images
+            // and the model never produces this.
+            FileMessage(symbol: "doc", title: "Can't be previewed over SSH")
         case .directory:
             FileMessage(symbol: "folder", title: "This is a folder")
         case .tooLarge(let size):

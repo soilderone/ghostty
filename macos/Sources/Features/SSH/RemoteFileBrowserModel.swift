@@ -122,6 +122,7 @@ final class RemoteFileBrowserModel: ObservableObject {
                             kind: document.kind,
                             text: document.text,
                             language: document.language,
+                            delimiter: document.delimiter,
                             base: base))
                     }
                 }

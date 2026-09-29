@@ -8,6 +8,9 @@ struct FilePreviewDocument: Equatable {
         case markdown
         case code
         case text
+
+        /// Delimited text (CSV, TSV) shown as a table.
+        case table
     }
 
     let kind: Kind
@@ -15,6 +18,9 @@ struct FilePreviewDocument: Equatable {
 
     /// The highlight.js language, when known.
     let language: String?
+
+    /// What separates the cells of a table.
+    var delimiter: String = ","
 
     /// The file's folder, so relative links and images resolve.
     let base: URL
@@ -105,6 +111,7 @@ struct FilePreviewWebView: NSViewRepresentable {
                 "kind": pending.document.kind.rawValue,
                 "text": pending.document.text,
                 "language": pending.document.language ?? "",
+                "delimiter": pending.document.delimiter,
                 "base": pending.document.base.absoluteString,
                 "dark": pending.dark,
             ]

@@ -160,6 +160,71 @@ pre {
   padding-right: 16px;
 }
 
+/* Tables (CSV and TSV) */
+
+#content.table {
+  min-width: max-content;
+}
+
+.table table {
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 100%;
+  font-size: 12px;
+}
+
+.table th,
+.table td {
+  max-width: 420px;
+  padding: 4px 10px;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-weight: 600;
+  background: var(--raise);
+}
+
+.table td.n {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.table tbody tr:nth-child(2n) td {
+  background: color-mix(in srgb, var(--raise) 55%, transparent);
+}
+
+/* The row numbers stay put while the table scrolls sideways. */
+.table .index {
+  position: sticky;
+  left: 0;
+  min-width: 2.5em;
+  color: var(--text-3);
+  text-align: right;
+  background: var(--raise);
+  user-select: none;
+}
+
+.table thead .index {
+  z-index: 2;
+}
+
+.table .note {
+  position: sticky;
+  left: 0;
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--text-3);
+}
+
 /* highlight.js tokens */
 
 .hljs-keyword,
