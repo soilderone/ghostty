@@ -122,6 +122,10 @@ extension Ghostty {
             }
         }
 
+        /// What the card and header of a framed split draw of this surface. Kept here so it lives as
+        /// long as the surface does, whichever views come and go.
+        private(set) lazy var cardInfo = SplitCardInfo(surfaceView: self)
+
         /// A clipboard confirmation waiting to be handled by its controller.
         @Published var pendingClipboardConfirmation: ClipboardConfirmationRequest? {
             didSet {

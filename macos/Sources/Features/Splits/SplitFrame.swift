@@ -71,8 +71,12 @@ extension EnvironmentValues {
 
 /// A terminal drawn as a card: its header, its border and the margin around it.
 struct SplitCard<Content: View>: View {
-    @ObservedObject var surfaceView: Ghostty.SurfaceView
+    let surfaceView: Ghostty.SurfaceView
     let content: Content
+
+    /// What is drawn of the terminal. The terminal itself isn't observed: it publishes far more
+    /// than the card shows.
+    @ObservedObject private var info: SplitCardInfo
 
     @Environment(\.ghosttyLastFocusedSurface) private var lastFocusedSurface
     @Environment(\.controlActiveState) private var controlActiveState
@@ -82,6 +86,7 @@ struct SplitCard<Content: View>: View {
     init(surfaceView: Ghostty.SurfaceView, @ViewBuilder content: () -> Content) {
         self.surfaceView = surfaceView
         self.content = content()
+        self._info = ObservedObject(wrappedValue: surfaceView.cardInfo)
     }
 
     /// The last focused terminal stays focused while focus is outside the split tree.
@@ -96,9 +101,8 @@ struct SplitCard<Content: View>: View {
 
     /// The terminal's background, which the card continues into its margin.
     private var terminalBackground: NSColor {
-        let color = surfaceView.backgroundColor ?? surfaceView.derivedConfig.backgroundColor
-        let alpha = surfaceView.derivedConfig.backgroundOpacity.clamped(to: 0.001...1)
-        return NSColor(color).withAlphaComponent(alpha)
+        let alpha = info.value.backgroundOpacity.clamped(to: 0.001...1)
+        return NSColor(info.value.background).withAlphaComponent(alpha)
     }
 
     var body: some View {
@@ -121,6 +125,7 @@ struct SplitCard<Content: View>: View {
 
             SplitHeader(
                 surfaceView: surfaceView,
+                info: info,
                 isFocused: isFocused,
                 accent: accent,
                 showsControls: isHovered || isFocused)
@@ -201,7 +206,8 @@ private struct SplitCardMargin: Shape {
 /// A card's header: the terminal icon, its directory (or title), and buttons to zoom and close
 /// it. Dragging the header moves the terminal.
 private struct SplitHeader: View {
-    @ObservedObject var surfaceView: Ghostty.SurfaceView
+    let surfaceView: Ghostty.SurfaceView
+    @ObservedObject var info: SplitCardInfo
     let isFocused: Bool
     let accent: Color
     let showsControls: Bool
@@ -216,23 +222,22 @@ private struct SplitHeader: View {
     @State private var showsSSHConnectionPicker = false
 
     private var directory: String? {
-        guard let pwd = surfaceView.pwd, !pwd.isEmpty else { return nil }
-        return pwd
+        info.value.directory
     }
 
     var body: some View {
         HStack(spacing: 8) {
             Group {
-                Image(systemName: surfaceView.sshConnection == nil ? "terminal" :
-                      (surfaceView.childExitedMessage == nil ? "network" : "network.slash"))
+                Image(systemName: info.value.sshConnection == nil ? "terminal" :
+                      (info.value.isDisconnected ? "network.slash" : "network"))
                     .font(.system(size: 11))
                     .foregroundColor(isFocused ? accent : Color(nsColor: ChromePalette.tertiaryText))
 
                 // Truncate the head so the current directory stays visible.
-                Text(surfaceView.sshConnection.map {
-                    "SSH \($0.displayName)" + (surfaceView.childExitedMessage == nil ? "" : " · Disconnected")
+                Text(info.value.sshConnection.map {
+                    "SSH \($0.displayName)" + (info.value.isDisconnected ? " · Disconnected" : "")
                 } ??
-                     (directory?.abbreviatedPath ?? surfaceView.title))
+                     (directory?.abbreviatedPath ?? info.value.title))
                     .font(directory == nil ? Font.system(size: 12) : Font.system(size: 11.5, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.head)
@@ -242,7 +247,7 @@ private struct SplitHeader: View {
             .allowsHitTesting(false)
 
             // Something happened here while it wasn't focused.
-            if let badge = surfaceView.badge {
+            if let badge = info.value.badge {
                 TerminalBadgeIcon(badge: badge, size: 11)
             }
 
@@ -269,7 +274,7 @@ private struct SplitHeader: View {
                     .allowsHitTesting(false)
             }
         }
-        .help(directory ?? surfaceView.title)
+        .help(directory ?? info.value.title)
         .onAppear {
             isScrolled = (surfaceView.scrollbar?.offset ?? 0) > 0
         }
@@ -290,7 +295,7 @@ private struct SplitHeader: View {
 
     private var controls: some View {
         HStack(spacing: 2) {
-            if surfaceView.sshConnection != nil && surfaceView.childExitedMessage != nil {
+            if info.value.sshConnection != nil && info.value.isDisconnected {
                 SplitHeaderButton(symbol: "arrow.clockwise", help: "Reconnect SSH") {
                     (surfaceView.window?.windowController as? TerminalController)?
                         .reconnectSSH(on: surfaceView)

@@ -89,7 +89,7 @@ struct SplitFloatingZoom: View {
                     .accessibilityHidden(true)
 
                 SplitZoomScrim(
-                    surfaceView: target,
+                    info: target.cardInfo,
                     amount: floating,
                     // A tap while the card is on its way back must not zoom it again.
                     isInteractive: motion != .restoring,
@@ -188,15 +188,14 @@ struct SplitFloatingRestore<Content: View>: View {
 /// The wash over the terminals behind a floating card, in the color of the window canvas. A
 /// click on it restores the split.
 private struct SplitZoomScrim: View {
-    @ObservedObject var surfaceView: Ghostty.SurfaceView
+    @ObservedObject var info: SplitCardInfo
     let amount: CGFloat
     let isInteractive: Bool
     let onTap: () -> Void
 
     /// The canvas the window shows around the cards, without any transparency of its own.
     private var canvas: Color {
-        let background = surfaceView.backgroundColor ?? surfaceView.derivedConfig.backgroundColor
-        return Color(nsColor: ChromePalette.canvas(behind: NSColor(background)).withAlphaComponent(1))
+        Color(nsColor: ChromePalette.canvas(behind: NSColor(info.value.background)).withAlphaComponent(1))
     }
 
     var body: some View {
