@@ -9,6 +9,7 @@ import SwiftUI
 struct GitView: View {
     @ObservedObject var model: GitViewModel
     let directory: URL?
+    let connection: SSHConnection?
     let isCovered: Bool
 
     @Environment(\.controlActiveState) private var controlActiveState
@@ -26,7 +27,7 @@ struct GitView: View {
         }
         .onAppear {
             hasAppeared = true
-            model.setDirectory(directory)
+            model.setDirectory(directory, connection: connection)
             model.setWindowActive(controlActiveState == .key)
             model.setVisible(!isCovered)
         }
@@ -34,7 +35,8 @@ struct GitView: View {
             hasAppeared = false
             model.setVisible(false)
         }
-        .onChange(of: directory) { model.setDirectory($0) }
+        .onChange(of: directory) { model.setDirectory($0, connection: connection) }
+        .onChange(of: connection) { model.setDirectory(directory, connection: $0) }
         .onChange(of: controlActiveState) { model.setWindowActive($0 == .key) }
         .onChange(of: isCovered) { if hasAppeared { model.setVisible(!$0) } }
     }

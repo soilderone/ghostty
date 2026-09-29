@@ -591,6 +591,10 @@ extension Ghostty {
         /// Explicit command to set
         var command: String?
 
+        /// The SSH destination represented by this surface, when its command starts an SSH
+        /// session. This stays in Swift; the core receives the quoted command above.
+        var sshConnection: SSHConnection?
+
         /// Environment variables to set for the terminal
         var environmentVariables: [String: String] = [:]
 

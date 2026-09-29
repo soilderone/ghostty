@@ -4,6 +4,7 @@ import SwiftUI
 /// What the tool rail's buttons do. The window's controller provides these.
 struct ToolRailActions {
     let newSplit: () -> Void
+    let connectSSH: (SSHConnection) -> Void
     let toggleSidebar: (SidebarPanel) -> Void
     let openConfig: () -> Void
 }
@@ -18,6 +19,7 @@ struct ToolRailView: View {
 
     @ObservedObject var sidebars: TerminalSidebars
     let actions: ToolRailActions
+    @State private var showsSSHConnectionPicker = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -34,6 +36,12 @@ struct ToolRailView: View {
                 buttons(showsLabels: false)
             }
         }
+        .popover(isPresented: $showsSSHConnectionPicker) {
+            SSHConnectionPicker { connection in
+                showsSSHConnectionPicker = false
+                actions.connectSSH(connection)
+            }
+        }
     }
 
     private func buttons(showsLabels: Bool) -> some View {
@@ -46,6 +54,15 @@ struct ToolRailView: View {
                 showsLabel: showsLabels,
                 help: "New Split Right",
                 action: actions.newSplit)
+
+            ToolRailButton(
+                title: "SSH",
+                symbol: "network",
+                tint: .kind(.terminal),
+                isActive: false,
+                showsLabel: showsLabels,
+                help: "Connect SSH",
+                action: { showsSSHConnectionPicker = true })
 
             sidebarButton(.files, showsLabel: showsLabels)
             sidebarButton(.git, showsLabel: showsLabels)

@@ -42,6 +42,7 @@ final class GitViewModel: ObservableObject {
 
     /// The directory the view follows; the repository is the one that contains it.
     @Published private(set) var directory: URL?
+    @Published private(set) var connection: SSHConnection?
 
     /// The repository's top-level directory, or nil while unknown or outside a repository.
     @Published private(set) var root: String?
@@ -115,6 +116,7 @@ final class GitViewModel: ObservableObject {
 
     private var isRefreshing = false
     private var refreshAgain = false
+    private var refreshRequestID = 0
     private var timer: Timer?
     private var isVisible = false
     private var isWindowActive = false
@@ -125,11 +127,14 @@ final class GitViewModel: ObservableObject {
 
     /// Follows the focused terminal's directory. Moving within the same repository keeps the
     /// view's state.
-    func setDirectory(_ url: URL?) {
-        guard url != directory else { return }
+    func setDirectory(_ url: URL?, connection: SSHConnection? = nil) {
+        guard url != directory || connection != self.connection else { return }
+        let connectionChanged = connection != self.connection
+        self.connection = connection
         directory = url
 
-        if let url, let root, url.path == root || url.path.hasPrefix(root + "/") {
+        if !connectionChanged, let url, let root,
+           url.path == root || url.path.hasPrefix(root + "/") {
             return
         }
 
@@ -164,6 +169,9 @@ final class GitViewModel: ObservableObject {
     private func resetRepository() {
         generation += 1
         logRequestID += 1
+        refreshRequestID += 1
+        isRefreshing = false
+        refreshAgain = false
         root = nil
         gitDirectory = nil
         isRepository = nil
@@ -193,9 +201,13 @@ final class GitViewModel: ObservableObject {
         }
 
         isRefreshing = true
+        refreshRequestID += 1
+        let requestID = refreshRequestID
         let generation = self.generation
+        let connection = self.connection
         Task { @MainActor in
-            await refreshStatus(directory: directory, generation: generation)
+            await refreshStatus(directory: directory, connection: connection, generation: generation)
+            guard requestID == refreshRequestID else { return }
             isRefreshing = false
             if refreshAgain {
                 refreshAgain = false
@@ -205,12 +217,12 @@ final class GitViewModel: ObservableObject {
     }
 
     @MainActor
-    private func refreshStatus(directory: URL, generation: Int) async {
+    private func refreshStatus(directory: URL, connection: SSHConnection?, generation: Int) async {
         do {
             if root == nil {
                 let output = try await GitRunner.run(
                     ["rev-parse", "--show-toplevel", "--absolute-git-dir"],
-                    in: directory.path)
+                    in: directory.path, connection: connection)
                 guard generation == self.generation else { return }
                 let lines = output.text.split(whereSeparator: \.isNewline).map(String.init)
                 guard lines.count >= 2 else { throw GitError(message: "Unexpected output from git rev-parse.") }
@@ -222,11 +234,11 @@ final class GitViewModel: ObservableObject {
             guard let root else { return }
             let output = try await GitRunner.run(
                 ["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all"],
-                in: root)
+                in: root, connection: connection)
             guard generation == self.generation else { return }
 
             var newStatus = GitStatus.parse(output)
-            if let gitDirectory {
+            if connection == nil, let gitDirectory {
                 newStatus.state = GitRepoState.detect(gitDirectory: gitDirectory)
             }
             error = nil
@@ -292,11 +304,13 @@ final class GitViewModel: ObservableObject {
     private func reloadChangeDiff() {
         guard let change = selectedChange, let root else { return }
         let generation = self.generation
+        let connection = self.connection
         let (arguments, successCodes) = Self.diffArguments(for: change)
         Task { @MainActor in
             let state: GitDiffState
             do {
-                let output = try await GitRunner.run(arguments, in: root, successCodes: successCodes)
+                let output = try await GitRunner.run(
+                    arguments, in: root, connection: connection, successCodes: successCodes)
                 state = .loaded(GitDiff.parse(output))
             } catch {
                 state = .failed(error.localizedDescription)
@@ -343,6 +357,7 @@ final class GitViewModel: ObservableObject {
         logRequestID += 1
         let requestID = logRequestID
         let generation = self.generation
+        let connection = self.connection
         let skip = reset ? 0 : commits.count
         Task { @MainActor in
             do {
@@ -355,7 +370,7 @@ final class GitViewModel: ObservableObject {
                     "-n", "\(Self.logPageSize + 1)",
                     "HEAD",
                     "--",
-                ], in: root)
+                ], in: root, connection: connection)
                 guard generation == self.generation, requestID == self.logRequestID else { return }
 
                 let loaded = GitCommit.parseLog(output.text)
@@ -408,9 +423,12 @@ final class GitViewModel: ObservableObject {
     private func loadCommitDetail() {
         guard let hash = selectedCommit, hash != GitHistoryRow.worktreeID, let root else { return }
         let generation = self.generation
+        let connection = self.connection
         Task { @MainActor in
             do {
-                let output = try await GitRunner.run(["show", "-s", "--format=\(GitCommitDetail.format)", hash], in: root)
+                let output = try await GitRunner.run(
+                    ["show", "-s", "--format=\(GitCommitDetail.format)", hash],
+                    in: root, connection: connection)
                 guard var detail = GitCommitDetail.parse(output.text) else {
                     throw GitError(message: "Unexpected output from git show.")
                 }
@@ -422,7 +440,7 @@ final class GitViewModel: ObservableObject {
                 } else {
                     arguments += ["--root", hash]
                 }
-                let files = try await GitRunner.run(arguments, in: root)
+                let files = try await GitRunner.run(arguments, in: root, connection: connection)
                 detail.files = GitChangedFile.parse(files)
                 detail.filesTruncated = files.truncated
 
@@ -446,6 +464,7 @@ final class GitViewModel: ObservableObject {
         guard let file = selectedCommitFile, let detail = commitDetail, let root else { return }
         commitFileDiff = .loading
         let generation = self.generation
+        let connection = self.connection
         let paths = [file.originalPath, file.path].compactMap { $0 }
         let arguments: [String]
         if let parent = detail.parents.first {
@@ -457,7 +476,7 @@ final class GitViewModel: ObservableObject {
         Task { @MainActor in
             let state: GitDiffState
             do {
-                let output = try await GitRunner.run(arguments, in: root)
+                let output = try await GitRunner.run(arguments, in: root, connection: connection)
                 state = .loaded(GitDiff.parse(output))
             } catch {
                 state = .failed(error.localizedDescription)

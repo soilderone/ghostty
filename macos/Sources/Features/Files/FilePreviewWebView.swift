@@ -131,7 +131,7 @@ struct FilePreviewWebView: NSViewRepresentable {
             switch url.scheme?.lowercased() {
             case "http", "https", "mailto":
                 NSWorkspace.shared.open(url)
-            case "file":
+            case "file", "ssh":
                 onOpenFile(url)
             default:
                 break

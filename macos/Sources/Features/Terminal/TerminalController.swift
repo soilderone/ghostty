@@ -78,7 +78,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         // time of writing this: it'd just restore to a shell in the same directory
         // as the script. We may want to revisit this behavior when we have scrollback
         // restoration.
-        self.restorable = (base?.command ?? "") == ""
+        self.restorable = (base?.command ?? "") == "" || base?.sshConnection != nil
 
         // Setup our initial derived config based on the current app config
         self.derivedConfig = DerivedConfig(ghostty.config)
@@ -1078,6 +1078,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             if let focusedUUID = undoState.focusedSurface,
                let focusTarget = surfaceTree.first(where: { $0.id == focusedUUID }) {
                 focusedSurface = focusTarget
+                syncFocusedSSH()
                 if sidebars.zoomed == nil {
                     DispatchQueue.main.async {
                         Ghostty.moveFocus(to: focusTarget, from: nil)
@@ -1087,6 +1088,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
                 // No prior focused surface or we can't find it, let's focus
                 // the first.
                 self.focusedSurface = focusedSurface
+                syncFocusedSSH()
                 if sidebars.zoomed == nil {
                     DispatchQueue.main.async {
                         Ghostty.moveFocus(to: focusedSurface, from: nil)
@@ -1140,6 +1142,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             // If this is our first surface then our focused surface will be nil
             // so we force the focused surface to the leaf.
             focusedSurface = view
+            syncFocusedSSH()
         }
 
         // Initialize our content view to the SwiftUI root
@@ -1157,6 +1160,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
                     self.sidebars.restoreZoom()
                     self.splitRight(self)
                 },
+                connectSSH: { [weak self] in self?.connectSSH($0) },
                 toggleSidebar: { [weak self] in self?.sidebars.toggle($0) },
                 openConfig: { [weak self] in self?.ghostty.openConfig() }
             ),
@@ -1592,6 +1596,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
     override func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {
         super.focusedSurfaceDidChange(to: to)
+        syncFocusedSSH()
 
         // We always cancel our event listener
         surfaceAppearanceCancellables.removeAll()
@@ -1615,6 +1620,37 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     override func focusedPwdDidChange(to pwd: String?) {
         super.focusedPwdDidChange(to: pwd)
         sidebars.directoryDidChange(to: pwd)
+    }
+
+    func syncFocusedSSH() {
+        sidebars.focusedSSHDidChange(to: focusedSurface?.sshConnection)
+    }
+
+    /// Opens a separate SSH terminal so the current local shell remains available.
+    func connectSSH(_ connection: SSHConnection, from source: Ghostty.SurfaceView? = nil) {
+        var config = Ghostty.SurfaceConfiguration()
+        config.sshConnection = connection
+        config.command = connection.terminalCommand(controlPath: SSHControlPaths.shared.path(for: connection))
+        sidebars.restoreZoom()
+
+        if let source = source ?? focusedSurface {
+            _ = newSplit(at: source, direction: .right, baseConfig: config)
+        } else {
+            _ = Self.newTab(ghostty, from: window, withBaseConfig: config)
+        }
+    }
+
+    func reconnectSSH(on oldView: Ghostty.SurfaceView) {
+        guard let connection = oldView.sshConnection, oldView.processExited,
+              let oldNode = surfaceTree.root?.node(view: oldView),
+              let ghosttyApp = ghostty.app else { return }
+
+        var config = Ghostty.SurfaceConfiguration()
+        config.sshConnection = connection
+        config.command = connection.terminalCommand(controlPath: SSHControlPaths.shared.path(for: connection))
+        let newView = Ghostty.SurfaceView(ghosttyApp, baseConfig: config)
+        guard let newTree = try? surfaceTree.replacing(node: oldNode, with: .leaf(newView)) else { return }
+        replaceSurfaceTree(newTree, moveFocusTo: newView, moveFocusFrom: oldView, undoAction: "Reconnect SSH")
     }
 
     private func syncAppearanceOnPropertyChange(_ surface: Ghostty.SurfaceView?) {

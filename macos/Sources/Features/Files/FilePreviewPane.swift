@@ -176,6 +176,7 @@ struct FilePreviewPane: View {
 
     /// A link in a markdown file: folders show in the tree, files open in a tab.
     private func openLink(_ link: URL) {
+        guard link.isFileURL else { return }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: link.path, isDirectory: &isDirectory) else {
             NSSound.beep()

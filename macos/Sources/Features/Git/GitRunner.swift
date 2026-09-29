@@ -30,6 +30,7 @@ enum GitRunner {
 
     private static let timeout: TimeInterval = 30
     private static let maxStderrBytes = 16 * 1024
+    private static let remoteMarker = Data([0x1e] + Array("GHOSTTY_GIT".utf8) + [0x1f])
 
     /// The git to run. An app launched from the Finder gets launchd's minimal PATH, where `git`
     /// is the /usr/bin shim that asks to install the command line tools when they're missing,
@@ -52,9 +53,35 @@ enum GitRunner {
     static func run(
         _ arguments: [String],
         in directory: String,
+        connection: SSHConnection? = nil,
         maxBytes: Int = maxOutputBytes,
         successCodes: Set<Int32> = [0]
     ) async throws -> GitOutput {
+        if let connection {
+            let options = [
+                "-c", "core.quotepath=off",
+                "-c", "color.ui=false",
+                "-c", "log.showsignature=false",
+            ] + arguments
+            let command = "cd \(SSHConnection.shellQuote(directory)) && " +
+                "printf '\\036GHOSTTY_GIT\\037' && " +
+                "LC_ALL=C GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_PAGER=cat PAGER=cat " +
+                "exec git " + options.map(SSHConnection.shellQuote).joined(separator: " ")
+            do {
+                let output = try await SSHRunner.run(
+                    command, on: connection, maxBytes: maxBytes + 4096, successCodes: successCodes)
+                guard let range = output.data.range(of: remoteMarker) else {
+                    throw GitError(message: "Remote git returned unexpected output.")
+                }
+                let data = Data(output.data[range.upperBound...].prefix(maxBytes))
+                return GitOutput(
+                    data: data,
+                    truncated: output.truncated || output.data.count - range.upperBound > maxBytes)
+            } catch let error as SSHCommandError {
+                if error.message.contains("not a git repository") { throw GitError.notARepository }
+                throw GitError(message: error.message)
+            }
+        }
         guard let executable else { throw GitError.notFound }
 
         return try await withCheckedThrowingContinuation { continuation in

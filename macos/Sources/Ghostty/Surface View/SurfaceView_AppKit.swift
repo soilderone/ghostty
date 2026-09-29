@@ -8,6 +8,10 @@ import GhosttyKit
 extension Ghostty {
     /// The NSView implementation for a terminal surface.
     class SurfaceView: OSSurfaceView, Codable, Identifiable {
+        /// A connection started from the SSH picker. An ordinary shell that runs ssh itself
+        /// stays local here, since the app cannot safely infer its destination or directory.
+        @Published private(set) var sshConnection: SSHConnection? = nil
+
         // The current title of the surface as defined by the pty. This can be
         // changed with escape codes.
         @Published private(set) var title: String = "" {
@@ -249,6 +253,7 @@ extension Ghostty {
             // is non-zero so that our layer bounds are non-zero so that our renderer
             // can do SOMETHING.
             super.init(id: uuid, frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+            sshConnection = baseConfig?.sshConnection
 
             // Our cache of screen data
             cachedScreenContents = .init(duration: .milliseconds(500)) { [weak self] in
@@ -1870,6 +1875,7 @@ extension Ghostty {
             case uuid
             case title
             case isUserSetTitle
+            case sshConnection
         }
 
         required convenience init(from decoder: Decoder) throws {
@@ -1884,6 +1890,10 @@ extension Ghostty {
             let uuid = UUID(uuidString: try container.decode(String.self, forKey: .uuid))
             var config = Ghostty.SurfaceConfiguration()
             config.workingDirectory = try container.decode(String?.self, forKey: .pwd)
+            if let connection = try container.decodeIfPresent(SSHConnection.self, forKey: .sshConnection) {
+                config.sshConnection = connection
+                config.command = connection.terminalCommand(controlPath: SSHControlPaths.shared.path(for: connection))
+            }
             let savedTitle = try container.decodeIfPresent(String.self, forKey: .title)
             let isUserSetTitle = try container.decodeIfPresent(Bool.self, forKey: .isUserSetTitle) ?? false
 
@@ -1905,6 +1915,7 @@ extension Ghostty {
             try container.encode(id.uuidString, forKey: .uuid)
             try container.encode(title, forKey: .title)
             try container.encode(titleFromTerminal != nil, forKey: .isUserSetTitle)
+            try container.encodeIfPresent(sshConnection, forKey: .sshConnection)
         }
     }
 }

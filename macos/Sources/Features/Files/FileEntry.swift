@@ -47,6 +47,25 @@ struct FileEntry: Hashable {
         }
     }
 
+    /// Metadata supplied by the remote file helper. This URL is a path identifier for the
+    /// browser only; callers must not pass it to local FileManager or NSWorkspace operations.
+    init(
+        remoteURL: URL,
+        isDirectory: Bool,
+        isSymbolicLink: Bool,
+        size: Int64,
+        modified: Date?,
+        permissions: Int
+    ) {
+        self.url = remoteURL
+        self.name = remoteURL.lastPathComponent
+        self.isDirectory = isDirectory
+        self.isSymbolicLink = isSymbolicLink
+        self.size = size
+        self.modified = modified
+        self.permissions = permissions
+    }
+
     /// Lists a folder, unsorted.
     static func list(_ directory: URL, readPermissions: Bool) throws -> [FileEntry] {
         let urls = try FileManager.default.contentsOfDirectory(

@@ -74,6 +74,17 @@ final class TerminalSidebars: ObservableObject {
     /// or nil if it hasn't reported one. Panels open here.
     @Published private(set) var directory: URL?
 
+    /// The connection of the last focused terminal. Its remote browsing directory starts at
+    /// that account's home and then moves only when the user navigates the remote Files panel.
+    @Published private(set) var remoteConnection: SSHConnection?
+    @Published private(set) var remoteHome: String?
+    @Published private(set) var remoteDirectory: String?
+    @Published private(set) var remoteError: String?
+    @Published private(set) var isResolvingRemoteDirectory = false
+    private var remoteDirectories: [SSHConnection: String] = [:]
+    private var remoteHomes: [SSHConnection: String] = [:]
+    private var remoteGeneration = 0
+
     /// Whether the sidebars are drawn as cards, like the terminals with `macos-split-frame`.
     @Published var framed: Bool = false
 
@@ -83,6 +94,16 @@ final class TerminalSidebars: ObservableObject {
 
     /// The file browser's state, kept while its sidebar is closed so it reopens where it was.
     private(set) lazy var files = FileBrowserModel()
+
+    /// Remote preview tabs are kept per host when Files is closed or focus moves to a local split.
+    private var remoteFileModels: [SSHConnection: RemoteFileBrowserModel] = [:]
+
+    func remoteFiles(for connection: SSHConnection) -> RemoteFileBrowserModel {
+        if let model = remoteFileModels[connection] { return model }
+        let model = RemoteFileBrowserModel(connection: connection)
+        remoteFileModels[connection] = model
+        return model
+    }
 
     init() {
         leading = Side(panel: nil, width: Self.savedWidth(for: .leading))
@@ -167,6 +188,71 @@ final class TerminalSidebars: ObservableObject {
         }
         guard url != directory else { return }
         directory = url
+    }
+
+    var contentDirectory: URL? {
+        if remoteConnection != nil {
+            return remoteDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
+        }
+        return directory
+    }
+
+    func focusedSSHDidChange(to connection: SSHConnection?) {
+        guard remoteConnection != connection else { return }
+        remoteGeneration += 1
+        remoteConnection = connection
+        remoteHome = connection.flatMap { remoteHomes[$0] }
+        remoteDirectory = connection.flatMap { remoteDirectories[$0] }
+        remoteError = nil
+        isResolvingRemoteDirectory = false
+        if connection != nil && remoteDirectory == nil { refreshRemoteDirectory() }
+    }
+
+    func navigateRemote(to path: String) {
+        guard let connection = remoteConnection, path.hasPrefix("/") else { return }
+        let standardized = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.path
+        remoteDirectories[connection] = standardized
+        remoteDirectory = standardized
+    }
+
+    func refreshRemoteDirectory() {
+        guard let connection = remoteConnection else { return }
+        remoteGeneration += 1
+        let generation = remoteGeneration
+        remoteError = nil
+        isResolvingRemoteDirectory = true
+        Task { @MainActor in
+            for attempt in 0..<12 {
+                guard generation == remoteGeneration, remoteConnection == connection else { return }
+                do {
+                    let output = try await SSHRunner.run(
+                        "pwd", on: connection, maxBytes: 4096, timeout: 5)
+                    let path = output.text.split(whereSeparator: \.isNewline)
+                        .map(String.init).first(where: { $0.hasPrefix("/") })
+                    guard !output.truncated, let path else {
+                        throw SSHCommandError(message: "The remote home directory could not be read.")
+                    }
+                    guard generation == remoteGeneration, remoteConnection == connection else { return }
+                    remoteHomes[connection] = path
+                    remoteHome = path
+                    if remoteDirectory == nil { navigateRemote(to: path) }
+                    isResolvingRemoteDirectory = false
+                    SSHRecentConnections.remember(connection)
+                    return
+                } catch {
+                    guard generation == remoteGeneration, remoteConnection == connection else { return }
+                    let message = error.localizedDescription
+                    let authenticationPending = message.contains("Permission denied") ||
+                        message.contains("Host key verification failed")
+                    guard authenticationPending && attempt < 11 else {
+                        isResolvingRemoteDirectory = false
+                        remoteError = message
+                        return
+                    }
+                    try? await Task.sleep(for: .seconds(2))
+                }
+            }
+        }
     }
 
     private func update(_ edge: SidebarEdge, _ body: (inout Side) -> Void) {

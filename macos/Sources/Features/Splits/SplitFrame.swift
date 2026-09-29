@@ -213,6 +213,7 @@ private struct SplitHeader: View {
     @State private var isScrolled = false
     @State private var isDragging = false
     @State private var isHoveringDragSource = false
+    @State private var showsSSHConnectionPicker = false
 
     private var directory: String? {
         guard let pwd = surfaceView.pwd, !pwd.isEmpty else { return nil }
@@ -222,12 +223,16 @@ private struct SplitHeader: View {
     var body: some View {
         HStack(spacing: 8) {
             Group {
-                Image(systemName: "terminal")
+                Image(systemName: surfaceView.sshConnection == nil ? "terminal" :
+                      (surfaceView.childExitedMessage == nil ? "network" : "network.slash"))
                     .font(.system(size: 11))
                     .foregroundColor(isFocused ? accent : Color(nsColor: ChromePalette.tertiaryText))
 
                 // Truncate the head so the current directory stays visible.
-                Text(directory?.abbreviatedPath ?? surfaceView.title)
+                Text(surfaceView.sshConnection.map {
+                    "SSH \($0.displayName)" + (surfaceView.childExitedMessage == nil ? "" : " · Disconnected")
+                } ??
+                     (directory?.abbreviatedPath ?? surfaceView.title))
                     .font(directory == nil ? Font.system(size: 12) : Font.system(size: 11.5, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.head)
@@ -280,6 +285,24 @@ private struct SplitHeader: View {
 
     private var controls: some View {
         HStack(spacing: 2) {
+            if surfaceView.sshConnection != nil && surfaceView.childExitedMessage != nil {
+                SplitHeaderButton(symbol: "arrow.clockwise", help: "Reconnect SSH") {
+                    (surfaceView.window?.windowController as? TerminalController)?
+                        .reconnectSSH(on: surfaceView)
+                }
+            }
+
+            SplitHeaderButton(symbol: "network", help: "Connect SSH") {
+                showsSSHConnectionPicker = true
+            }
+            .popover(isPresented: $showsSSHConnectionPicker) {
+                SSHConnectionPicker { connection in
+                    showsSSHConnectionPicker = false
+                    (surfaceView.window?.windowController as? TerminalController)?
+                        .connectSSH(connection, from: surfaceView)
+                }
+            }
+
             SplitHeaderButton(
                 symbol: tree.isZoomed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
                 help: tree.isZoomed ? "Restore Split" : "Zoom Split",
