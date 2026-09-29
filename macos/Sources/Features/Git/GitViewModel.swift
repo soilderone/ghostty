@@ -24,11 +24,18 @@ enum GitHistoryRow: Identifiable, Equatable {
     }
 }
 
+extension Notification.Name {
+    /// A command finished in a terminal (shell integration). The object is the terminal's
+    /// surface view. Commands are what change a repository, so the Git view looks again.
+    static let ghosttyCommandDidFinish = Notification.Name("com.mitchellh.ghostty.commandDidFinish")
+}
+
 /// The state of one window's Git view. It is read-only: it runs git to look at the repository
 /// of the focused terminal's directory and never changes anything.
 ///
-/// Status is polled every few seconds, but only while the view is on screen and its window is
-/// key, so a background window costs nothing.
+/// Status is polled, but only while the view is on screen and its window is key, so a
+/// background window costs nothing. While nothing changes the polls space out, and a command
+/// finishing in a terminal brings them back to the fast pace with an immediate look.
 ///
 /// Its methods are called on the main thread, and every git result comes back to it there.
 final class GitViewModel: ObservableObject {
@@ -37,7 +44,11 @@ final class GitViewModel: ObservableObject {
         case history
     }
 
-    private static let pollInterval: TimeInterval = 4
+    /// The wait between polls, doubled after each poll that finds nothing new, up to
+    /// `maxBackoffs` times. Over SSH every poll is a round trip and a git run on the host.
+    private static let localPollInterval: TimeInterval = 4
+    private static let remotePollInterval: TimeInterval = 10
+    private static let maxBackoffs = 2
     private static let logPageSize = 200
 
     /// The directory the view follows; the repository is the one that contains it.
@@ -68,6 +79,8 @@ final class GitViewModel: ObservableObject {
         didSet {
             guard selectedChange != oldValue else { return }
             changeDiff = .none
+            changeDiffOutput = nil
+            changeDiffStamp = nil
             loadChangeDiff()
         }
     }
@@ -118,10 +131,43 @@ final class GitViewModel: ObservableObject {
     private var refreshAgain = false
     private var refreshRequestID = 0
     private var timer: Timer?
+    private var isPolling = false
     private var isVisible = false
     private var isWindowActive = false
     private var retryLogFromStart = false
     private var logRequestID = 0
+
+    /// How many polls in a row found nothing new, and whether one has since.
+    private var quietPolls = 0
+    private var sawChange = false
+
+    /// What git printed last time, so an unchanged repository isn't parsed and compared again.
+    private var statusOutput: GitOutput?
+    private var changeDiffOutput: GitOutput?
+
+    /// What the selected change's diff depends on when it was loaded. While that is the same,
+    /// the diff is the same and git isn't asked again.
+    private var changeDiffStamp: DiffStamp?
+    private var changeDiffRequestID = 0
+
+    private var commandObserver: NSObjectProtocol?
+
+    init() {
+        commandObserver = NotificationCenter.default.addObserver(
+            forName: .ghosttyCommandDidFinish,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.commandDidFinish()
+        }
+    }
+
+    deinit {
+        if let commandObserver {
+            NotificationCenter.default.removeObserver(commandObserver)
+        }
+        timer?.invalidate()
+    }
 
     // MARK: Inputs
 
@@ -139,6 +185,7 @@ final class GitViewModel: ObservableObject {
         }
 
         resetRepository()
+        sawChange = true
         refresh()
     }
 
@@ -156,17 +203,53 @@ final class GitViewModel: ObservableObject {
         guard isVisible && isWindowActive else {
             timer?.invalidate()
             timer = nil
+            isPolling = false
             return
         }
 
-        guard timer == nil else { return }
-        refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
+        guard !isPolling else { return }
+        isPolling = true
+        quietPolls = 0
+
+        // One that is already running (the view sets its directory just before it starts
+        // polling) will schedule the next poll when it is done.
+        if !isRefreshing { refresh() }
+    }
+
+    /// Waits for the next poll once a refresh is done. The wait doubles for each poll in a row
+    /// that found nothing new.
+    private func scheduleNextPoll() {
+        timer?.invalidate()
+        timer = nil
+        guard isPolling else { return }
+
+        if sawChange {
+            sawChange = false
+            quietPolls = 0
+        } else {
+            quietPolls = min(quietPolls + 1, Self.maxBackoffs)
+        }
+
+        let base = connection == nil ? Self.localPollInterval : Self.remotePollInterval
+        let interval = base * Double(1 << quietPolls)
+        let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
+        // Lets the system line the poll up with other work instead of waking up for it alone.
+        timer.tolerance = interval / 4
+        self.timer = timer
+    }
+
+    private func commandDidFinish() {
+        guard isPolling else { return }
+        sawChange = true
+        refresh()
     }
 
     private func resetRepository() {
+        statusOutput = nil
+        changeDiffOutput = nil
+        changeDiffStamp = nil
         generation += 1
         logRequestID += 1
         refreshRequestID += 1
@@ -212,6 +295,8 @@ final class GitViewModel: ObservableObject {
             if refreshAgain {
                 refreshAgain = false
                 refresh()
+            } else {
+                scheduleNextPoll()
             }
         }
     }
@@ -237,12 +322,28 @@ final class GitViewModel: ObservableObject {
                 in: root, connection: connection)
             guard generation == self.generation else { return }
 
-            var newStatus = GitStatus.parse(output)
-            if connection == nil, let gitDirectory {
-                newStatus.state = GitRepoState.detect(gitDirectory: gitDirectory)
-            }
+            // Parsing and comparing a big status takes a while, so it happens off the main
+            // thread, and not at all when git printed the same as last time.
+            let previous = status
+            let previousOutput = statusOutput
+            let localGitDirectory = connection == nil ? self.gitDirectory : nil
+            let (newStatus, changed) = await Task.detached(priority: .userInitiated) { () -> (GitStatus, Bool) in
+                var parsed: GitStatus
+                if let previous, let previousOutput, previousOutput.isSame(as: output) {
+                    parsed = previous
+                } else {
+                    parsed = GitStatus.parse(output)
+                }
+                if let localGitDirectory {
+                    parsed.state = GitRepoState.detect(gitDirectory: localGitDirectory)
+                }
+                return (parsed, parsed != previous)
+            }.value
+            guard generation == self.generation else { return }
+
+            statusOutput = output
             error = nil
-            applyStatus(newStatus)
+            applyStatus(newStatus, changed: changed)
         } catch {
             guard generation == self.generation else { return }
             if let gitError = error as? GitError, gitError == .notARepository {
@@ -254,13 +355,14 @@ final class GitViewModel: ObservableObject {
         }
     }
 
-    private func applyStatus(_ newStatus: GitStatus) {
+    private func applyStatus(_ newStatus: GitStatus, changed: Bool) {
         let previous = status
-        guard newStatus != previous else {
+        guard changed else {
             // Nothing changed, but a file's content can change without its status.
             reloadChangeDiff()
             return
         }
+        sawChange = true
         status = newStatus
 
         // Keep the selection while its file is still listed in the same group.
@@ -301,23 +403,99 @@ final class GitViewModel: ObservableObject {
 
     /// Loads the selected change's diff again. The result only replaces the diff on screen
     /// when it differs, so an unchanged diff keeps its scroll position.
+    ///
+    /// Git isn't run at all when the files the diff comes from are as they were when it was
+    /// loaded. That can't be told over SSH, so a remote diff is loaded again every time.
     private func reloadChangeDiff() {
         guard let change = selectedChange, let root else { return }
         let generation = self.generation
         let connection = self.connection
+
+        let stamp = connection == nil ? diffStamp(for: change, root: root) : nil
+        if let stamp, stamp == changeDiffStamp {
+            switch changeDiff {
+            case .loaded, .loading: return
+            default: break
+            }
+        }
+
+        // From here the stamp describes what is on screen or on its way there.
+        changeDiffStamp = stamp
+        changeDiffRequestID += 1
+        let requestID = changeDiffRequestID
         let (arguments, successCodes) = Self.diffArguments(for: change)
+        let previousOutput = changeDiffOutput
         Task { @MainActor in
             let state: GitDiffState
+            var newOutput: GitOutput?
             do {
                 let output = try await GitRunner.run(
                     arguments, in: root, connection: connection, successCodes: successCodes)
-                state = .loaded(GitDiff.parse(output))
+                newOutput = output
+                if let previousOutput, previousOutput.isSame(as: output), case .loaded = changeDiff {
+                    // The same text as on screen.
+                    state = changeDiff
+                } else {
+                    state = .loaded(await Self.parse(output))
+                }
             } catch {
                 state = .failed(error.localizedDescription)
             }
-            guard generation == self.generation, selectedChange == change, changeDiff != state else { return }
+            guard generation == self.generation, selectedChange == change,
+                  requestID == changeDiffRequestID else { return }
+
+            if case .loaded = state {
+                changeDiffOutput = newOutput
+            } else {
+                // Look again at the next poll.
+                changeDiffOutput = nil
+                changeDiffStamp = nil
+            }
+            guard changeDiff != state else { return }
             changeDiff = state
+            sawChange = true
         }
+    }
+
+    /// Parses a diff off the main thread; a big one takes long enough to be felt.
+    private static func parse(_ output: GitOutput) async -> GitDiff {
+        await Task.detached(priority: .userInitiated) { GitDiff.parse(output) }.value
+    }
+
+    /// What a diff depends on: the file it compares, and the index and HEAD it is compared
+    /// through. Only the modification time and size of the file and the index are looked at,
+    /// not their contents.
+    private struct DiffStamp: Equatable {
+        struct File: Equatable {
+            let seconds: Int
+            let nanoseconds: Int
+            let size: Int64
+        }
+
+        let file: File?
+        let index: File?
+        let head: String?
+
+        static func stamp(ofItemAtPath path: String) -> File? {
+            // A link's own time, since the diff of a link is about where it points.
+            var info = stat()
+            guard lstat(path, &info) == 0 else { return nil }
+            return File(
+                seconds: info.st_mtimespec.tv_sec,
+                nanoseconds: info.st_mtimespec.tv_nsec,
+                size: Int64(info.st_size))
+        }
+    }
+
+    /// Nil when there is nothing to tell whether the diff still holds.
+    private func diffStamp(for change: GitChange, root: String) -> DiffStamp? {
+        // A staged diff is the index against HEAD, and an untracked file's is the file alone.
+        let file = change.group == .staged ? nil : DiffStamp.stamp(ofItemAtPath: root + "/" + change.file.path)
+        let index = change.group == .untracked
+            ? nil
+            : gitDirectory.flatMap { DiffStamp.stamp(ofItemAtPath: $0 + "/index") }
+        guard file != nil || index != nil else { return nil }
+        return DiffStamp(file: file, index: index, head: status?.head)
     }
 
     private static func diffArguments(for change: GitChange) -> ([String], Set<Int32>) {
@@ -477,7 +655,7 @@ final class GitViewModel: ObservableObject {
             let state: GitDiffState
             do {
                 let output = try await GitRunner.run(arguments, in: root, connection: connection)
-                state = .loaded(GitDiff.parse(output))
+                state = .loaded(await Self.parse(output))
             } catch {
                 state = .failed(error.localizedDescription)
             }

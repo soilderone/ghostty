@@ -677,12 +677,9 @@ private struct GitDiffPane: View {
 private struct GitDiffLines: View {
     let diff: GitDiff
 
-    private var numberWidth: CGFloat {
-        let largest = diff.lines.reduce(0) { max($0, $1.oldNumber ?? 0, $1.newNumber ?? 0) }
-        return CGFloat(max(String(largest).count, 3)) * 7 + 10
-    }
-
     var body: some View {
+        let numberWidth = CGFloat(max(String(diff.maxLineNumber).count, 3)) * 7 + 10
+
         GeometryReader { geo in
             ScrollView([.vertical, .horizontal]) {
                 LazyVStack(alignment: .leading, spacing: 0) {

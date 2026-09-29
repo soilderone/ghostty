@@ -366,6 +366,9 @@ struct GitDiff: Equatable {
     /// Whether the diff was longer than the output limit.
     var truncated: Bool = false
 
+    /// The largest line number in the diff, which sets how wide the number columns are.
+    private(set) var maxLineNumber: Int = 0
+
     var isEmpty: Bool { lines.isEmpty && !isBinary }
 
     static func parse(_ output: GitOutput) -> GitDiff {
@@ -379,6 +382,7 @@ struct GitDiff: Equatable {
 
         func append(_ kind: LineKind, _ text: String, old: Int? = nil, new: Int? = nil) {
             diff.lines.append(.init(id: diff.lines.count, kind: kind, text: text, oldNumber: old, newNumber: new))
+            diff.maxLineNumber = max(diff.maxLineNumber, old ?? 0, new ?? 0)
         }
 
         for rawLine in output.text.split(separator: "\n", omittingEmptySubsequences: false) {

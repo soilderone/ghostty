@@ -1646,6 +1646,9 @@ extension Ghostty {
                 guard let surface = target.target.surface else { return }
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
 
+                // A command may have changed a repository, whatever the notification settings.
+                NotificationCenter.default.post(name: .ghosttyCommandDidFinish, object: surfaceView)
+
                 // The badge on the surface doesn't depend on the notification settings, only on
                 // how long the command took.
                 if let config = (NSApplication.shared.delegate as? AppDelegate)?.ghostty.config,

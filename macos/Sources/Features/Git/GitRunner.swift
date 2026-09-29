@@ -20,6 +20,11 @@ struct GitOutput {
     var text: String {
         data.lossyUTF8String
     }
+
+    /// Whether git printed exactly the same. A byte comparison is far cheaper than parsing.
+    func isSame(as other: GitOutput) -> Bool {
+        truncated == other.truncated && data == other.data
+    }
 }
 
 /// Runs git commands for the Git view. Everything is read-only: the view never changes the
