@@ -28,6 +28,9 @@ Ghostty fork 里重新实现的功能。目标平台**只有 macOS 版**。
 | 9   | Git 视图                        | 高    | P3    | CI 构建通过 |
 | 10  | 文件浏览器                      | 高    | P3    | CI 构建通过 |
 | 12  | SSH 终端与远端 Files/Git        | 高    | 9、10 | 待 CI 验证  |
+| 13  | 预览补 CSV、PDF、音视频         | 低–中 | 10    | 待 CI 验证  |
+| 14  | 自定义工具栏按钮                | 低–中 | 5     | 待 CI 验证  |
+| 15  | tab 与分屏徽标                  | 低–中 | 6、8  | 待 CI 验证  |
 | 11  | AI 面板、工具与访问级别         | 极高  | P3    | 暂缓        |
 
 ---
@@ -362,6 +365,54 @@ Python 3（仅 Files 需要），见 changelog。
 
 ---
 
+## 补充功能
+
+清单之外，看完 Wave fork 之后补的几项。
+
+### 13. 预览补 CSV、PDF、音视频 — 低–中
+
+**状态：待 CI 验证。** 代码在 `macos/Sources/Features/Files/`（`FileMediaPreview.swift`、`FilePreviewPane.swift`）和
+`macos/Preview/`，见 changelog。
+
+- CSV / TSV 在预览页里画成表格：第一行当表头并固定在顶部，行号列固定在左边，数字右对齐，
+  带引号、逗号、换行的单元格按 RFC 4180 解析；最多渲染前 5000 行，其余给出提示。
+- PDF 用 PDFKit 的连续滚动视图，加密的 PDF 给出提示。音视频用系统播放器（AVKit），不自动播放，
+  切走或关掉预览时停止。支持系统自带解码的格式：mp4 / m4v / mov、mp3 / m4a / aac / wav / aiff / caf / flac。
+- 远端（SSH）预览只有 CSV 表格生效；PDF 沿用原来的首页图片，音视频不支持。
+
+**Wave 参考：** `frontend/app/view/preview/csvview.tsx`、`preview-streaming.tsx`。
+
+### 14. 自定义工具栏按钮 — 低–中
+
+**状态：待 CI 验证。** 代码在 `macos/Sources/Features/Sidebar/`（`ToolRailWidgets.swift`、`ToolRailView.swift`），
+见 changelog。
+
+- 配置目录里的 `widgets.json`（和 Ghostty 的配置文件在同一个文件夹）是一个按钮数组，每项一个：
+  `label` 和 `command` 必填；`icon`（SF Symbol 名，不是的话按文字画，比如 emoji）、`color`（`#RRGGBB`，
+  悬停时的颜色）、`open`（`split` / `tab` / `window`）、`direction`（`right` / `left` / `up` / `down`）、
+  `cwd`（`focused` / `home` / 路径）、`keep-open`（命令结束后保留终端）、`help`（悬停提示）可选。
+- 按钮排在 Git 之后，中间一条细分隔线。工具栏右键或设置按钮右键的"Edit Widgets…"打开这个文件，
+  没有的话先写一个示例。文件改动、配置重载、应用回到前台时重新读取；坏条目会被跳过，
+  并在工具栏上显示一个提示按钮。窗口太矮时工具栏可以滚动。
+- 不做 Wave 那种"任意视图类型"的 widget（网页、编辑器等），只跑命令。
+
+**Wave 参考：** `pkg/wconfig/defaultconfig/widgets.json`、`frontend/app/workspace/widgets.tsx`、`docs/docs/customwidgets.mdx`。
+
+### 15. tab 与分屏徽标 — 低–中
+
+**状态：待 CI 验证。** 代码在 `macos/Sources/Features/Terminal/TerminalBadge.swift`，见 changelog。
+
+- 终端不在焦点时发生了事，就给它打一个徽标：命令失败（红 ✕）、通知（OSC 9 / 777）、响铃、命令成功结束
+  （绿 ✓，只有耗时超过 `notify-on-command-finish-after` 的命令才算）。终端拿到焦点时清掉。命令的徽标依赖 shell 集成，
+  不依赖 `notify-on-command-finish` 是否开着；Ctrl-C（130）不打徽标。
+- tab 上显示其中最紧急的一个（失败 > 通知 > 响铃 > 成功）：胶囊 tab 里替换掉圆点，原生 tab 栏里放在颜色点前面；
+  分屏标题栏上显示这个分屏自己的徽标。
+- 不做 Wave 的 `wsh badge` 命令行接口：任何会发通知的程序（OSC 9 / 777）自然就有徽标。
+
+**Wave 参考：** `frontend/app/store/badge.ts`、`frontend/app/tab/tabbadges.tsx`、`cmd/wsh/cmd/wshcmd-badge.go`。
+
+---
+
 ## 不迁移
 
 Wave 自身的问题修复，或在 Ghostty 里没有对应物的功能：
@@ -372,3 +423,5 @@ Wave 自身的问题修复，或在 Ghostty 里没有对应物的功能：
   特有的问题。git 轮询规则已并入功能 9。
 - 网页块（地址栏胶囊、首次点击修复）——Ghostty 没有内置浏览器。
 - 引导页、应用构建器（tsunami）以及 Wave 云端模式相关的调整。
+- tab 背景（`tab:background`，每个 tab 单独的渐变或图片）——做过一版又撤销了：终端卡片是不透明的，背景只能在分屏之间
+  5pt 的间隙、透明标题栏和工具栏后面露出来，效果不值得多出来的菜单、存档字段和配置文件。

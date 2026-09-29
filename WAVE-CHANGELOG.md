@@ -5,6 +5,57 @@
 
 验证状态：**待 CI 验证** → **CI 构建通过** → **已实机验证**。
 
+## 2026-09-29 · 功能 13–15：预览补类型、自定义工具栏按钮、徽标
+
+三项都在 macOS 端，没有改 Ghostty 核心（Zig）。设计见 `WAVE-MIGRATION.md` 的"补充功能"。
+
+**做了什么**
+
+- **13 预览补类型。** CSV / TSV 在预览页里画成表格（表头和行号列固定，数字右对齐，带引号 / 逗号 / 换行的单元格
+  按 RFC 4180 解析，最多渲染前 5000 行）。PDF 用 PDFKit 连续滚动，音视频用 AVKit 的系统播放器（不自动播放，
+  切走时停止）。这三类文件不再受 2 MB 的文本预览上限限制。远端预览只有 CSV 表格生效。
+- **14 自定义工具栏按钮。** 配置目录里的 `widgets.json` 定义按钮，点一下在新分屏（也可以是新 tab / 新窗口）里跑命令。
+  字段：`label`、`command`（必填）；`icon`（SF Symbol 或文字）、`color`、`open`、`direction`、`cwd`、`keep-open`、`help`。
+  按钮排在 Git 之后。"Edit Widgets…"（工具栏或设置按钮的右键菜单）打开文件，没有则写入示例。坏条目被跳过并在
+  工具栏上提示；文件改动、配置重载、回到前台时重新读取。窗口很矮时工具栏可以滚动。
+- **15 徽标。** 终端不在焦点时，命令失败 / 成功（耗时超过 `notify-on-command-finish-after`）、响铃、通知会给它打徽标，
+  拿到焦点时清掉。tab 显示其中最紧急的（胶囊 tab 里替换圆点，原生 tab 栏里放在颜色点前面），分屏标题栏显示自己的。
+  不依赖 `notify-on-command-finish` 是否开着；Ctrl-C（130）不打。
+
+**实现方式**
+
+- 预览页：`macos/Preview/preview.js` 和 `preview.css` 加了 `table` 类型；`FilePreviewContent` 加了 `.media` 分支，
+  视图在 `Features/Files/FileMediaPreview.swift`。`FilePreviewDocument` 多了 `delimiter`。
+- 自定义按钮：`Features/Sidebar/ToolRailWidgets.swift`（模型、容错解析、文件监听）；`ToolRailView` 里的按钮多了
+  自定义颜色；执行在 `TerminalController.runToolRailWidget`，走和 SSH 一样的 `newSplit(at:direction:baseConfig:)`。
+  没有走 Zig 的配置项，因为可重复的结构化配置项要改 C API，而开发机上没有 Zig 可以验证；JSON 文件由 Swift 读，和
+  Wave 的 `widgets.json` 也更接近。
+- 徽标：`SurfaceView.badge`（`Ghostty.App` 里命令结束和通知的处理、响铃通知的观察者负责设置）；窗口的 `tabBadge`
+  从分屏树里实时取最紧急的一个，所以分屏关闭后也是对的。
+- `Helpers/ConfigDirectory.swift` 找配置目录（Application Support 优先于 XDG）和打开里面的文件。
+
+**提交：** `0a7dc54d8`（13）、`330612bf6`（14）、`6945c2a68`（15）
+
+**验证状态：** 没有构建、没有运行应用（按环境约束）。本机做了：
+
+- 整个 `macos/Sources` 的类型检查（用 `include/` 里的头文件做 `GhosttyKit` 模块、Sparkle 用桩）：改动后和干净基线的
+  错误集合完全一致（都是本机 SDK / 缺 ObjC 桥接造成的 28 个），没有新的错误或警告；注入错误的对照能被查出。
+  这个检查抓到并让我修掉了一个真问题：远端预览视图的 `switch` 没处理新的 `.media`。
+- CSV 解析和表格渲染在 node 里跑了测试（引号、换行、CRLF、BOM、不齐整的行、截断、标记不被执行）。
+- `widgets.json` 的解析和徽标规则编译成可执行文件跑了测试。
+- 手动查了尾随空格、制表符、连续空行；本机没有 SwiftLint，`--strict` 待 CI。
+  实际观感和交互待 CI 与实机确认。
+
+**没做 / 已知问题**
+
+- 预览：只支持 AVFoundation 自带解码的音视频格式（mkv / webm / ogg 等显示"二进制文件"，可以 Quick Look 或用默认程序打开）；
+  CSV 不排序、不筛选；远端 PDF 仍只显示首页。
+- 自定义按钮：只跑命令，不做 Wave 那种网页 / 编辑器类型的 widget；`icon` 是 SF Symbol 名，不支持 Font Awesome 名。
+  想改按钮顺序就调整文件里的顺序，没有 `display:order`。
+- 徽标：没有 `wsh badge` 那样的命令行接口和自定义图标 / 颜色；同一个 tab 里只显示最紧急的一个，没有 Wave 那样的"再加两个小点"。
+  徽标只在窗口不是 key 或终端不是第一响应者时出现，正在看的终端不会有。
+- 都还没有实机确认；重点看的地方见 `WAVE-TESTING.md`。
+
 ## 2026-09-29 · 终端放大改为浮在上方
 
 **做了什么**
