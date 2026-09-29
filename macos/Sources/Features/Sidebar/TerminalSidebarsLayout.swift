@@ -18,8 +18,6 @@ final class TerminalSidebarsLayout {
     private let leading: SidebarColumn
     private let trailing: SidebarColumn
     private let zoomOverlay: SidebarZoomOverlay
-    private let zoomLeading: NSLayoutConstraint
-    private let zoomTrailing: NSLayoutConstraint
     private let toolRail: NSView
     private let toolRailWidth: NSLayoutConstraint
     private var zoomCancellable: AnyCancellable?
@@ -66,8 +64,6 @@ final class TerminalSidebarsLayout {
         overlay.translatesAutoresizingMaskIntoConstraints = false
         overlay.isHidden = true
         zoomOverlay = overlay
-        zoomLeading = overlay.leadingAnchor.constraint(equalTo: container.leadingAnchor)
-        zoomTrailing = overlay.trailingAnchor.constraint(equalTo: toolRailView.leadingAnchor)
 
         container.addSubview(leading)
         container.addSubview(trailing)
@@ -97,8 +93,8 @@ final class TerminalSidebarsLayout {
 
             zoomOverlay.topAnchor.constraint(equalTo: top),
             zoomOverlay.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            zoomLeading,
-            zoomTrailing,
+            zoomOverlay.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            zoomOverlay.trailingAnchor.constraint(equalTo: toolRail.leadingAnchor),
 
             toolRail.topAnchor.constraint(equalTo: top),
             toolRail.bottomAnchor.constraint(equalTo: container.bottomAnchor),
@@ -142,31 +138,72 @@ final class TerminalSidebarsLayout {
         return column.convert(column.bounds, to: container)
     }
 
-    private func setOverlayFrame(_ frame: NSRect) {
-        zoomLeading.constant = frame.minX
-        zoomTrailing.constant = frame.maxX - toolRail.frame.minX
-    }
-
     private var shouldAnimateZoom: Bool {
         container.window?.isVisible == true &&
             !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion &&
             container.bounds.width > 0
     }
 
-    private func animateOverlay(to frame: NSRect, completion: (() -> Void)? = nil) {
+    /// Match the terminal zoom: lay out content once at its destination size and animate the
+    /// composited layer. Resizing the hosting view every frame makes Files and Git reflow.
+    private func sourceTransform(for panel: SidebarPanel) -> CATransform3D? {
+        let source = sourceFrame(for: panel)
+        let destination = zoomOverlay.frame
+        guard source.width > 0, source.height > 0,
+              destination.width > 0, destination.height > 0 else { return nil }
+
+        let scaleX = source.width / destination.width
+        let scaleY = source.height / destination.height
+        let anchor = zoomOverlay.layer?.anchorPoint ?? CGPoint(x: 0.5, y: 0.5)
+
+        return CATransform3DMakeAffineTransform(CGAffineTransform(
+            a: scaleX,
+            b: 0,
+            c: 0,
+            d: scaleY,
+            tx: source.minX - destination.minX - (1 - scaleX) * destination.width * anchor.x,
+            ty: source.minY - destination.minY - (1 - scaleY) * destination.height * anchor.y))
+    }
+
+    private func setOverlayTransform(_ transform: CATransform3D) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        zoomOverlay.layer?.transform = transform
+        CATransaction.commit()
+    }
+
+    private func animateOverlay(
+        from start: CATransform3D,
+        to end: CATransform3D,
+        completion: (() -> Void)? = nil
+    ) {
+        guard let layer = zoomOverlay.layer else {
+            completion?()
+            return
+        }
         guard shouldAnimateZoom else {
-            setOverlayFrame(frame)
-            container.layoutSubtreeIfNeeded()
+            setOverlayTransform(end)
             completion?()
             return
         }
 
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.36
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            setOverlayFrame(frame)
-            container.animator().layoutSubtreeIfNeeded()
-        }, completionHandler: completion)
+        let spring = CASpringAnimation(keyPath: "transform")
+        spring.fromValue = NSValue(caTransform3D: start)
+        spring.toValue = NSValue(caTransform3D: end)
+        // Match TerminalSplitTreeView's 0.38 s response and 0.9 damping fraction.
+        let angularFrequency = 2 * CGFloat.pi / 0.38
+        spring.mass = 1
+        spring.stiffness = angularFrequency * angularFrequency
+        spring.damping = 2 * 0.9 * angularFrequency
+        spring.initialVelocity = 0
+        spring.duration = spring.settlingDuration
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        CATransaction.setCompletionBlock(completion)
+        layer.transform = end
+        layer.add(spring, forKey: "sidebarZoom")
+        CATransaction.commit()
     }
 
     private func applyZoom(_ panel: SidebarPanel?) {
@@ -174,28 +211,25 @@ final class TerminalSidebarsLayout {
         desiredPanel = panel
         zoomGeneration += 1
         let generation = zoomGeneration
-        let presentedFrame = zoomOverlay.layer?.presentation()?.frame
-        zoomOverlay.layer?.removeAllAnimations()
-        if let presentedFrame, presentedPanel != nil {
-            setOverlayFrame(presentedFrame)
-            container.layoutSubtreeIfNeeded()
-        }
+        let currentTransform = zoomOverlay.layer?.presentation()?.transform ??
+            zoomOverlay.layer?.transform ?? CATransform3DIdentity
+        zoomOverlay.layer?.removeAnimation(forKey: "sidebarZoom")
 
         if let presentedPanel, let panel, presentedPanel != panel {
             column(for: presentedPanel).restoreContent()
             self.presentedPanel = nil
+            zoomOverlay.isHidden = true
+            setOverlayTransform(CATransform3DIdentity)
         }
 
         guard let panel else {
             guard let presentedPanel else { return }
-            let source = sourceFrame(for: presentedPanel)
+            let source = sourceTransform(for: presentedPanel) ?? CATransform3DIdentity
             let wasClosed = !sidebars.isOpen(presentedPanel)
             if wasClosed {
-                setOverlayFrame(source)
-                container.layoutSubtreeIfNeeded()
                 finishRestore(presentedPanel, generation: generation)
             } else {
-                animateOverlay(to: source) { [weak self] in
+                animateOverlay(from: currentTransform, to: source) { [weak self] in
                     self?.finishRestore(presentedPanel, generation: generation)
                 }
             }
@@ -203,11 +237,12 @@ final class TerminalSidebarsLayout {
         }
 
         let column = column(for: panel)
+        var start = currentTransform
         if presentedPanel == nil {
-            let source = sourceFrame(for: panel)
-            setOverlayFrame(source)
             container.layoutSubtreeIfNeeded()
+            start = sourceTransform(for: panel) ?? CATransform3DIdentity
             column.moveContent(to: zoomOverlay)
+            setOverlayTransform(start)
             zoomOverlay.isHidden = false
             presentedPanel = panel
             container.layoutSubtreeIfNeeded()
@@ -222,7 +257,7 @@ final class TerminalSidebarsLayout {
                 window.makeFirstResponder(zoomOverlay)
             }
         }
-        animateOverlay(to: NSRect(x: 0, y: 0, width: toolRail.frame.minX, height: zoomOverlay.frame.height))
+        animateOverlay(from: start, to: CATransform3DIdentity)
     }
 
     private func finishRestore(_ panel: SidebarPanel, generation: Int) {
@@ -231,6 +266,8 @@ final class TerminalSidebarsLayout {
         column(for: panel).restoreContent()
         presentedPanel = nil
         zoomOverlay.isHidden = true
+        zoomOverlay.layer?.removeAnimation(forKey: "sidebarZoom")
+        setOverlayTransform(CATransform3DIdentity)
         container.layoutSubtreeIfNeeded()
         if shouldReturnFocus { returnFocus() }
     }
