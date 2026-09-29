@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Darwin
 
@@ -158,12 +159,55 @@ final class SSHControlPaths: @unchecked Sendable {
     private let directory: String?
     private var paths: [SSHConnection: String] = [:]
 
+    private var terminationObserver: NSObjectProtocol?
+
     private init() {
         var template = Array((NSTemporaryDirectory() + "gssh.XXXXXX").utf8CString)
         directory = template.withUnsafeMutableBufferPointer { buffer in
             guard let result = mkdtemp(buffer.baseAddress) else { return nil }
             return String(cString: result)
         }
+
+        // The sockets belong to this run of the app; nothing else can use them afterwards.
+        terminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            self?.cleanUp()
+        }
+    }
+
+    /// Ends the connections that are kept open in the background and removes the sockets.
+    ///
+    /// A connection is kept for ten minutes after the last terminal using it closes, so the panels
+    /// don't have to sign in again. That is for while the app runs; once it quits the connection
+    /// would only sit there until its time is up. It doesn't wait long for them: a connection that
+    /// doesn't answer is left to end on its own.
+    func cleanUp() {
+        lock.lock()
+        let known = paths
+        let directory = self.directory
+        lock.unlock()
+
+        var exiting: [Process] = []
+        for (connection, path) in known where FileManager.default.fileExists(atPath: path) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+            process.arguments = ["-O", "exit", "-o", "ControlPath=\(path)"] + connection.sshArguments
+            process.standardInput = FileHandle.nullDevice
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            if (try? process.run()) != nil { exiting.append(process) }
+        }
+
+        let deadline = Date().addingTimeInterval(1)
+        for process in exiting {
+            while process.isRunning && Date() < deadline { usleep(5000) }
+            if process.isRunning { process.terminate() }
+        }
+
+        if let directory { try? FileManager.default.removeItem(atPath: directory) }
     }
 
     func path(for connection: SSHConnection) -> String? {

@@ -132,7 +132,11 @@
   }
 
   // A large table is slow to build for little benefit; past this many rows the rest is left out.
+  // Every cell is an element, so a wide table gets fewer rows: 5000 rows of 100 columns would
+  // be half a million elements.
   const maxTableRows = 5000;
+  const maxTableCells = 100000;
+  const minTableRows = 200;
 
   // Splits delimited text into rows of cells. Quoted cells (RFC 4180) may hold delimiters and
   // line breaks, and a doubled quote inside one is a quote.
@@ -184,8 +188,11 @@
     element.textContent = "";
     if (rows.length === 0) return;
 
-    const body = rows.slice(1, maxTableRows + 1);
-    const columns = Math.max(rows[0].length, ...body.map((row) => row.length));
+    // How wide the table is, judged by the header and the first rows.
+    const widest = Math.max(rows[0].length, ...rows.slice(1, minTableRows + 1).map((row) => row.length));
+    const rowLimit = Math.min(maxTableRows, Math.max(minTableRows, Math.floor(maxTableCells / widest)));
+    const body = rows.slice(1, rowLimit + 1);
+    const columns = Math.max(widest, ...body.map((row) => row.length));
 
     function addRow(parent, cells, number, cellTag) {
       const tr = document.createElement("tr");

@@ -61,9 +61,20 @@ try:
         print(json.dumps([entry(item.path) for item in os.scandir(path)], ensure_ascii=True))
     elif operation == "stat":
         print(json.dumps(entry(args[0]), ensure_ascii=True))
-    elif operation == "read":
-        with open(args[0], "rb") as source:
-            sys.stdout.buffer.write(source.read(int(args[1]) + 1))
+    elif operation == "preview":
+        # What the file is, and its content in the same round trip when it is a regular file
+        # small enough to show. The first line is JSON; everything after it is the content.
+        path, limit = args[0], int(args[1])
+        info = entry(path)
+        try:
+            regular = stat.S_ISREG(os.stat(path).st_mode)
+        except OSError:
+            regular = False
+        readable = regular and info["size"] <= limit
+        sys.stdout.buffer.write((json.dumps({"entry": info, "content": readable}, ensure_ascii=True) + "\n").encode("ascii"))
+        if readable:
+            with open(path, "rb") as source:
+                sys.stdout.buffer.write(source.read(limit + 1))
     elif operation == "create":
         with open(args[0], "xb"):
             pass
@@ -143,12 +154,35 @@ except Exception as error:
         return entry.fileEntry(in: (path as NSString).deletingLastPathComponent)
     }
 
-    static func read(_ path: String, on connection: SSHConnection, maxBytes: Int) async throws -> Data {
-        let output = try await run("read", [path, String(maxBytes)], on: connection, maxBytes: maxBytes + 1)
-        guard !output.truncated, output.data.count <= maxBytes else {
+    /// A remote path for the preview: what it is, and its content when there is any to show.
+    struct Preview {
+        let entry: FileEntry
+
+        /// Nil for a folder, a file larger than the limit, or anything that isn't a regular file.
+        let data: Data?
+    }
+
+    private struct PreviewHeader: Decodable {
+        let entry: Entry
+        let content: Bool
+    }
+
+    /// Looks at a path and reads it in one round trip, rather than a `stat` and then a read.
+    static func preview(_ path: String, maxBytes: Int, on connection: SSHConnection) async throws -> Preview {
+        let output = try await run("preview", [path, String(maxBytes)], on: connection, maxBytes: maxBytes + 8192)
+        guard !output.truncated else {
             throw SSHCommandError(message: "The remote file is too large to preview.")
         }
-        return output.data
+        return try parsePreview(output.data, in: (path as NSString).deletingLastPathComponent)
+    }
+
+    static func parsePreview(_ data: Data, in folder: String) throws -> Preview {
+        guard let newline = data.firstIndex(of: 0x0a),
+              let header = try? JSONDecoder().decode(PreviewHeader.self, from: data[data.startIndex..<newline]) else {
+            throw SSHCommandError(message: "The remote file helper returned unexpected output.")
+        }
+        let content = header.content ? Data(data[data.index(after: newline)...]) : nil
+        return Preview(entry: header.entry.fileEntry(in: folder), data: content)
     }
 
     static func createFile(_ path: String, on connection: SSHConnection) async throws {

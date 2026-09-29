@@ -7,7 +7,9 @@ final class RemoteFileBrowserModel: ObservableObject {
     let connection: SSHConnection
 
     @Published private(set) var directory: String?
-    @Published private(set) var entries: [FileEntry] = []
+    @Published private(set) var entries: [FileEntry] = [] {
+        didSet { entriesRevision += 1 }
+    }
     @Published private(set) var isLoading = false
     @Published private(set) var isWorking = false
     @Published var error: String?
@@ -29,17 +31,53 @@ final class RemoteFileBrowserModel: ObservableObject {
     private var listGeneration = 0
     private var previewGeneration = 0
 
+    /// Bumped when the listing changes, so the sorted and filtered lists know to be redone.
+    private var entriesRevision = 0
+    private var sortedCache: (key: SortInput, entries: [FileEntry])?
+    private var visibleCache: (key: VisibleKey, entries: [FileEntry])?
+
+    /// Bigger than this isn't previewed, whatever it is.
+    private static let maxImageBytes = 10 * 1024 * 1024
+
+    private struct SortInput: Equatable {
+        let revision: Int
+        let key: FileSortKey
+        let ascending: Bool
+    }
+
+    private struct VisibleKey: Equatable {
+        let sort: SortInput
+        let showsHidden: Bool
+        let filter: String
+    }
+
     init(connection: SSHConnection) {
         self.connection = connection
     }
 
+    /// The listing as the view shows it, sorted and filtered. The view asks for this on every
+    /// update, so it is only worked out again when something it depends on changes, and typing
+    /// in the filter doesn't sort again.
     var visibleEntries: [FileEntry] {
+        let sortInput = SortInput(revision: entriesRevision, key: sortKey, ascending: sortAscending)
+        let key = VisibleKey(sort: sortInput, showsHidden: showsHidden, filter: filter)
+        if let visibleCache, visibleCache.key == key { return visibleCache.entries }
+
+        let sorted: [FileEntry]
+        if let sortedCache, sortedCache.key == sortInput {
+            sorted = sortedCache.entries
+        } else {
+            sorted = sortKey.sorted(entries, ascending: sortAscending)
+            sortedCache = (sortInput, sorted)
+        }
+
         let needle = filter.trimmingCharacters(in: .whitespacesAndNewlines)
-        let filtered = entries.filter { entry in
+        let visible = sorted.filter { entry in
             (showsHidden || !entry.isHidden) &&
                 (needle.isEmpty || entry.name.localizedCaseInsensitiveContains(needle))
         }
-        return sortKey.sorted(filtered, ascending: sortAscending)
+        visibleCache = (key, visible)
+        return visible
     }
 
     func load(_ path: String) {
@@ -95,20 +133,18 @@ final class RemoteFileBrowserModel: ObservableObject {
         Task { @MainActor in
             let content: FilePreviewContent
             do {
-                let entry = try await SSHRemoteFiles.stat(path, on: connection)
+                let isImage = FilePreviewDocument.imageExtensions.contains((path as NSString).pathExtension.lowercased())
+                let limit = isImage ? Self.maxImageBytes : FilePreviewLoader.maxTextBytes
+                let preview = try await SSHRemoteFiles.preview(path, maxBytes: limit, on: connection)
+                let entry = preview.entry
                 if entry.isDirectory {
                     content = .directory
-                } else if entry.size > 10 * 1024 * 1024 {
+                } else if entry.size > limit {
                     content = .tooLarge(entry.size)
-                } else if FilePreviewDocument.imageExtensions.contains(entry.url.pathExtension.lowercased()) {
-                    let data = try await SSHRemoteFiles.read(path, on: connection, maxBytes: 10 * 1024 * 1024)
-                    content = NSImage(data: data).map(FilePreviewContent.image) ?? .binary
-                } else if entry.size > FilePreviewLoader.maxTextBytes {
-                    content = .tooLarge(entry.size)
-                } else {
-                    let data = try await SSHRemoteFiles.read(
-                        path, on: connection, maxBytes: FilePreviewLoader.maxTextBytes)
-                    if data.prefix(8192).contains(0) {
+                } else if let data = preview.data {
+                    if isImage {
+                        content = FilePreviewImage.load(data: data).map(FilePreviewContent.image) ?? .binary
+                    } else if data.prefix(8192).contains(0) {
                         content = .binary
                     } else {
                         let localURL = URL(fileURLWithPath: path)
@@ -125,6 +161,8 @@ final class RemoteFileBrowserModel: ObservableObject {
                             delimiter: document.delimiter,
                             base: base))
                     }
+                } else {
+                    content = .unreadable("It isn't a regular file.")
                 }
             } catch {
                 content = .unreadable(error.localizedDescription)

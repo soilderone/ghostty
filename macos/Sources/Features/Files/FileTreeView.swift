@@ -81,6 +81,7 @@ struct FileTreeView: NSViewRepresentable {
         func reload() {
             guard let outline else { return }
             revision = model.revision
+            childCache = [:]
             if nodesRoot != model.root {
                 nodes = [:]
                 parentNode = nil
@@ -93,6 +94,22 @@ struct FileTreeView: NSViewRepresentable {
             // Reloading keeps nodes that still exist expanded; keep their selection too.
             let rows = selected.compactMap { url in nodes[url].map { outline.row(forItem: $0) } }.filter { $0 >= 0 }
             outline.selectRowIndexes(IndexSet(rows), byExtendingSelection: false)
+            pruneNodes()
+        }
+
+        /// Forgets the nodes of folders that are no longer open. Only the folders that were
+        /// listed for this reload have children on screen, and a folder that opens later makes
+        /// its nodes when it is listed.
+        private func pruneNodes() {
+            var current = Set<URL>()
+            for children in childCache.values {
+                for case let node as FileNode in children where !node.isParentLink {
+                    current.insert(node.entry.url)
+                }
+            }
+            if current.count < nodes.count {
+                nodes = nodes.filter { current.contains($0.key) }
+            }
         }
 
         /// Expands the folders the model has open. A new outline, such as after the browser's
