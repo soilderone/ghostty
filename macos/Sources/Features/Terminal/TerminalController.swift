@@ -1631,6 +1631,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         var config = Ghostty.SurfaceConfiguration()
         config.sshConnection = connection
         config.command = connection.terminalCommand(controlPath: SSHControlPaths.shared.path(for: connection))
+        SSHAuthentication.configure(&config, for: connection)
         sidebars.restoreZoom()
 
         if let source = source ?? focusedSurface {
@@ -1648,6 +1649,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         var config = Ghostty.SurfaceConfiguration()
         config.sshConnection = connection
         config.command = connection.terminalCommand(controlPath: SSHControlPaths.shared.path(for: connection))
+        SSHAuthentication.configure(&config, for: connection)
         let newView = Ghostty.SurfaceView(ghosttyApp, baseConfig: config)
         guard let newTree = try? surfaceTree.replacing(node: oldNode, with: .leaf(view: newView)) else { return }
         replaceSurfaceTree(newTree, moveFocusTo: newView, moveFocusFrom: oldView, undoAction: "Reconnect SSH")

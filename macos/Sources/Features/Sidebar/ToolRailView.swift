@@ -37,10 +37,12 @@ struct ToolRailView: View {
             }
         }
         .popover(isPresented: $showsSSHConnectionPicker) {
-            SSHConnectionPicker { connection in
+            SSHConnectionPicker(onConnect: { connection in
                 showsSSHConnectionPicker = false
                 actions.connectSSH(connection)
-            }
+            }, onDismiss: {
+                showsSSHConnectionPicker = false
+            })
         }
     }
 

@@ -296,11 +296,13 @@ private struct SplitHeader: View {
                 showsSSHConnectionPicker = true
             }
             .popover(isPresented: $showsSSHConnectionPicker) {
-                SSHConnectionPicker { connection in
+                SSHConnectionPicker(onConnect: { connection in
                     showsSSHConnectionPicker = false
                     (surfaceView.window?.windowController as? TerminalController)?
                         .connectSSH(connection, from: surfaceView)
-                }
+                }, onDismiss: {
+                    showsSSHConnectionPicker = false
+                })
             }
 
             SplitHeaderButton(

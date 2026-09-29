@@ -125,6 +125,7 @@ jobs:
         env:
           APP: macos/build/${{ steps.info.outputs.configuration }}/Ghostty.app
         run: |
+          /usr/bin/codesign --verbose -f -s - -o runtime "$APP/Contents/MacOS/ghostty-ssh-askpass"
           /usr/bin/codesign --verbose -f -s - -o runtime \
             --entitlements macos/GhosttyReleaseLocal.entitlements "$APP"
 
@@ -152,14 +153,18 @@ jobs:
           /usr/bin/codesign --verbose -f -s "$MACOS_CERTIFICATE_NAME" -o runtime "$sparkle/Versions/B/Updater.app"
           /usr/bin/codesign --verbose -f -s "$MACOS_CERTIFICATE_NAME" -o runtime "$sparkle"
           /usr/bin/codesign --verbose -f -s "$MACOS_CERTIFICATE_NAME" -o runtime "$APP/Contents/PlugIns/DockTilePlugin.plugin"
+          /usr/bin/codesign --verbose -f -s "$MACOS_CERTIFICATE_NAME" -o runtime "$APP/Contents/MacOS/ghostty-ssh-askpass"
           /usr/bin/codesign --verbose -f -s "$MACOS_CERTIFICATE_NAME" -o runtime --entitlements macos/Ghostty.entitlements "$APP"
 
       - name: Verify signature
         env:
           APP: macos/build/${{ steps.info.outputs.configuration }}/Ghostty.app
         run: |
+          test -x "$APP/Contents/MacOS/ghostty-ssh-askpass"
+          /usr/bin/codesign --verify --strict --verbose=2 "$APP/Contents/MacOS/ghostty-ssh-askpass"
           /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP"
           lipo -archs "$APP/Contents/MacOS/ghostty"
+          lipo -archs "$APP/Contents/MacOS/ghostty-ssh-askpass"
 
       # upload-artifact drops symlinks and exec bits, which breaks the
       # frameworks in the bundle, so archive with ditto first.

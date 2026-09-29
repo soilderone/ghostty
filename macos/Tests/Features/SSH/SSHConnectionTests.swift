@@ -36,6 +36,16 @@ struct SSHConnectionTests {
         }
     }
 
+    @Test func terminalCommandDoesNotDoubleExec() throws {
+        let connection = try SSHConnection.parse("alice@example.com:2222")
+        let command = connection.terminalCommand(controlPath: "/tmp/ghostty ssh socket")
+        let executable = Bundle.main.executableURL?.path ?? "/usr/bin/ssh"
+        #expect(command.hasPrefix(SSHConnection.shellQuote(executable) + " "))
+        #expect(!command.hasPrefix("exec "))
+        #expect(command.contains("'-p' '2222' 'alice@example.com'"))
+        #expect(command.contains("'ControlPath=/tmp/ghostty ssh socket'"))
+    }
+
     @Test func resolvesRemotePathsWithoutLocalHomeExpansion() {
         #expect(SSHRemotePath.resolve("~/src", current: "/work", home: "/home/alice") == "/home/alice/src")
         #expect(SSHRemotePath.resolve("../repo", current: "/home/alice/src", home: "/home/alice") == "/home/alice/repo")

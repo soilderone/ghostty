@@ -1893,6 +1893,7 @@ extension Ghostty {
             if let connection = try container.decodeIfPresent(SSHConnection.self, forKey: .sshConnection) {
                 config.sshConnection = connection
                 config.command = connection.terminalCommand(controlPath: SSHControlPaths.shared.path(for: connection))
+                SSHAuthentication.configure(&config, for: connection)
             }
             let savedTitle = try container.decodeIfPresent(String.self, forKey: .title)
             let isUserSetTitle = try container.decodeIfPresent(Bool.self, forKey: .isUserSetTitle) ?? false

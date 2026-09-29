@@ -92,7 +92,9 @@ struct SSHConnection: Codable, Hashable {
         (port.map { ["-p", String($0)] } ?? []) + [destination]
     }
 
-    /// The surface command goes through a shell. Quote every argument before it gets there.
+    /// The surface command goes through a shell. Ghostty's macOS process launcher already
+    /// prepends `exec -l`, so this value must begin with the executable, not another `exec`.
+    /// Quote every argument before it gets there.
     func terminalCommand(controlPath: String?) -> String {
         let executable = Bundle.main.executableURL?.path ?? "/usr/bin/ssh"
         var arguments = [executable]
@@ -101,7 +103,7 @@ struct SSHConnection: Codable, Hashable {
         }
         arguments += Self.controlOptions(path: controlPath)
         arguments += sshArguments
-        return "exec " + arguments.map(Self.shellQuote).joined(separator: " ")
+        return arguments.map(Self.shellQuote).joined(separator: " ")
     }
 
     static func controlOptions(path: String?) -> [String] {

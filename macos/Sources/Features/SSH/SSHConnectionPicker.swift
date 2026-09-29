@@ -81,68 +81,244 @@ enum SSHRecentConnections {
 /// split; the existing local shell is left in place for another connection or local work.
 struct SSHConnectionPicker: View {
     let onConnect: (SSHConnection) -> Void
+    let onDismiss: () -> Void
 
     @State private var input = ""
     @State private var error: String?
     @State private var configuredHosts: [String] = []
+    @State private var recentHosts: [String] = []
+    @State private var selectedIndex = 0
     @FocusState private var inputFocused: Bool
 
-    private var suggestions: [String] {
-        let names = SSHRecentConnections.list().map(\.displayName) + configuredHosts
-        var seen = Set<String>()
-        return names.filter { name in
-            seen.insert(name).inserted &&
-                (input.isEmpty || name.localizedCaseInsensitiveContains(input))
+    private var query: String {
+        input.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var recentMatches: [String] {
+        recentHosts.filter { query.isEmpty || $0.localizedCaseInsensitiveContains(query) }
+    }
+
+    private var configuredMatches: [String] {
+        let recent = Set(recentHosts.map { $0.lowercased() })
+        let matches = configuredHosts.filter {
+            !recent.contains($0.lowercased()) &&
+                (query.isEmpty || $0.localizedCaseInsensitiveContains(query))
         }
+        return Array(matches.prefix(query.isEmpty ? 6 : 30))
+    }
+
+    private var directDestination: String? {
+        guard !query.isEmpty,
+              !recentHosts.contains(where: { $0.caseInsensitiveCompare(query) == .orderedSame }),
+              !configuredHosts.contains(where: { $0.caseInsensitiveCompare(query) == .orderedSame }),
+              (try? SSHConnection.parse(query)) != nil else { return nil }
+        return query
+    }
+
+    private var rows: [String] {
+        recentMatches + configuredMatches + (directDestination.map { [$0] } ?? [])
+    }
+
+    private var selectedName: String? {
+        let choices = rows
+        guard !choices.isEmpty else { return nil }
+        return choices[min(selectedIndex, choices.count - 1)]
+    }
+
+    private var listHeight: CGFloat {
+        let sections = [!recentMatches.isEmpty, !configuredMatches.isEmpty, directDestination != nil]
+            .filter { $0 }.count
+        let overflowHint = query.isEmpty && configuredHosts.count > configuredMatches.count ? 26 : 0
+        let contentHeight = rows.isEmpty ? 78 : rows.count * 30 + sections * 22 + overflowHint + 12
+        return CGFloat(min(contentHeight, 250))
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("SSH Connection")
-                .font(.system(size: 13, weight: .semibold))
-
+        VStack(spacing: 0) {
             HStack(spacing: 8) {
-                TextField("host, user@host, or user@host:port", text: $input)
-                    .textFieldStyle(.roundedBorder)
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(Color(nsColor: ChromePalette.tertiaryText))
+                TextField("Search or enter user@host:port", text: $input)
+                    .textFieldStyle(.plain)
                     .focused($inputFocused)
-                    .onSubmit(connectInput)
-                Button("Connect", action: connectInput)
-                    .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .onChange(of: input) { _ in
+                        selectedIndex = 0
+                        error = nil
+                    }
+                    .onMoveCommand { direction in
+                        switch direction {
+                        case .up: moveSelection(-1)
+                        case .down: moveSelection(1)
+                        default: break
+                        }
+                    }
+                    .onExitCommand(perform: onDismiss)
+                    .onSubmit(connectSelected)
+                if !input.isEmpty {
+                    Button {
+                        input = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(Color(nsColor: ChromePalette.tertiaryText))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Clear search")
+                }
             }
+            .font(.system(size: 12))
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            .background(Color(nsColor: ChromePalette.raised))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .padding(8)
+
+            Rectangle()
+                .fill(Color(nsColor: ChromePalette.separator))
+                .frame(height: 1)
 
             if let error {
                 Text(error)
                     .font(.system(size: 11))
                     .foregroundColor(Color(nsColor: ChromePalette.error))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
             }
 
-            if suggestions.isEmpty {
-                Text("Type an SSH destination to connect.")
-                    .font(.system(size: 11))
-                    .foregroundColor(Color(nsColor: ChromePalette.secondaryText))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List(suggestions, id: \.self) { name in
-                    Button {
-                        connect(name)
-                    } label: {
-                        Label(name, systemImage: "network")
-                            .frame(maxWidth: .infinity, alignment: .leading)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 3) {
+                        if !recentMatches.isEmpty {
+                            sectionTitle("RECENT")
+                            ForEach(recentMatches, id: \.self) { name in
+                                connectionRow(name, symbol: "clock.arrow.circlepath", label: name)
+                            }
+                        }
+                        if !configuredMatches.isEmpty {
+                            sectionTitle("SSH CONFIG")
+                            ForEach(configuredMatches, id: \.self) { name in
+                                connectionRow(name, symbol: "network", label: name)
+                            }
+                            if query.isEmpty && configuredHosts.count > configuredMatches.count {
+                                Text("Type to search all \(configuredHosts.count) configured hosts")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(Color(nsColor: ChromePalette.tertiaryText))
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 4)
+                            }
+                        }
+                        if let directDestination {
+                            sectionTitle("NEW CONNECTION")
+                            connectionRow(
+                                directDestination,
+                                symbol: "plus",
+                                label: "Connect to \(directDestination)")
+                        }
+                        if rows.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(query.isEmpty ? "No saved SSH hosts" : "No matching hosts")
+                                    .foregroundColor(Color(nsColor: ChromePalette.text))
+                                Text(query.isEmpty
+                                     ? "Enter a host above or add one to ~/.ssh/config."
+                                     : "Enter a valid host or user@host:port to connect.")
+                                    .foregroundColor(Color(nsColor: ChromePalette.secondaryText))
+                            }
+                            .font(.system(size: 11))
+                            .padding(10)
+                        }
                     }
-                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(6)
+                }
+                .frame(height: listHeight)
+                .onChange(of: selectedIndex) { _ in
+                    if let selectedName { proxy.scrollTo(selectedName, anchor: .center) }
                 }
             }
+
+            Rectangle()
+                .fill(Color(nsColor: ChromePalette.separator))
+                .frame(height: 1)
+
+            HStack {
+                Text("↑↓ Select    ↵ Connect    Esc Close")
+                Spacer()
+                Text("SSH")
+            }
+            .font(.system(size: 10))
+            .foregroundColor(Color(nsColor: ChromePalette.tertiaryText))
+            .padding(.horizontal, 12)
+            .frame(height: 28)
         }
-        .padding(12)
-        .frame(width: 380, height: 310)
+        .frame(width: 340)
+        .background(Color(nsColor: ChromePalette.popover))
+        .background {
+            Group {
+                Button { moveSelection(-1) } label: { Color.clear }
+                    .keyboardShortcut(.upArrow, modifiers: [])
+                Button { moveSelection(1) } label: { Color.clear }
+                    .keyboardShortcut(.downArrow, modifiers: [])
+            }
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+        }
         .onAppear {
             configuredHosts = SSHHostDiscovery.configuredHosts()
-            inputFocused = true
+            recentHosts = SSHRecentConnections.list().map(\.displayName)
+            DispatchQueue.main.async { inputFocused = true }
         }
     }
 
-    private func connectInput() {
-        connect(input)
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundColor(Color(nsColor: ChromePalette.secondaryText))
+            .padding(.horizontal, 9)
+            .padding(.top, 6)
+            .padding(.bottom, 2)
+    }
+
+    private func connectionRow(_ name: String, symbol: String, label: String) -> some View {
+        Button {
+            connect(name)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: symbol)
+                    .frame(width: 16)
+                    .foregroundColor(Color(nsColor: ChromePalette.secondaryText))
+                Text(label)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+                if selectedName == name {
+                    Image(systemName: "return")
+                        .font(.system(size: 10))
+                        .foregroundColor(Color(nsColor: ChromePalette.tertiaryText))
+                }
+            }
+            .font(.system(size: 11))
+            .foregroundColor(Color(nsColor: ChromePalette.text))
+            .padding(.horizontal, 8)
+            .frame(height: 27)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(selectedName == name ? Color(nsColor: ChromePalette.selectionOverlay) : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            if hovering, let index = rows.firstIndex(of: name) { selectedIndex = index }
+        }
+        .id(name)
+    }
+
+    private func moveSelection(_ step: Int) {
+        guard !rows.isEmpty else { return }
+        selectedIndex = max(0, min(selectedIndex + step, rows.count - 1))
+    }
+
+    private func connectSelected() {
+        connect(selectedName ?? query)
     }
 
     private func connect(_ text: String) {
