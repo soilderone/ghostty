@@ -67,8 +67,11 @@ final class GitViewModel: ObservableObject {
     @Published var page: Page = .changes {
         didSet {
             guard page != oldValue else { return }
-            if page == .history && commits.isEmpty && root != nil {
-                loadLog(reset: true)
+            if page == .history {
+                dropLogStreamWhenIdle = false
+                if commits.isEmpty && root != nil { loadLog(reset: true) }
+            } else {
+                parkLogStream()
             }
         }
     }
@@ -137,6 +140,12 @@ final class GitViewModel: ObservableObject {
     private var retryLogFromStart = false
     private var logRequestID = 0
 
+    /// The `git log` that the History page reads its pages from, and how many commits it has
+    /// gone through, those it skipped included. Only local repositories have one.
+    private var logStream: GitLogStream?
+    private var logStreamPosition = 0
+    private var dropLogStreamWhenIdle = false
+
     /// How many polls in a row found nothing new, and whether one has since.
     private var quietPolls = 0
     private var sawChange = false
@@ -167,6 +176,7 @@ final class GitViewModel: ObservableObject {
             NotificationCenter.default.removeObserver(commandObserver)
         }
         timer?.invalidate()
+        logStream?.cancel()
     }
 
     // MARK: Inputs
@@ -204,9 +214,11 @@ final class GitViewModel: ObservableObject {
             timer?.invalidate()
             timer = nil
             isPolling = false
+            parkLogStream()
             return
         }
 
+        dropLogStreamWhenIdle = false
         guard !isPolling else { return }
         isPolling = true
         quietPolls = 0
@@ -247,6 +259,7 @@ final class GitViewModel: ObservableObject {
     }
 
     private func resetRepository() {
+        dropLogStream()
         statusOutput = nil
         changeDiffOutput = nil
         changeDiffStamp = nil
@@ -382,6 +395,7 @@ final class GitViewModel: ObservableObject {
             loadLog(reset: true)
         } else if headMoved {
             // The History page reloads the log when it is next shown.
+            dropLogStream()
             logRequestID += 1
             commits = []
             hasMoreCommits = false
@@ -521,6 +535,7 @@ final class GitViewModel: ObservableObject {
         guard let root, !isLoadingLog || reset else { return }
         guard status?.head != nil else {
             // No commits yet.
+            dropLogStream()
             logRequestID += 1
             commits = []
             hasMoreCommits = false
@@ -539,32 +554,88 @@ final class GitViewModel: ObservableObject {
         let skip = reset ? 0 : commits.count
         Task { @MainActor in
             do {
-                let output = try await GitRunner.run([
-                    "log",
-                    "--topo-order",
-                    "--decorate=full",
-                    "--format=\(GitCommit.logFormat)",
-                    "--skip=\(skip)",
-                    "-n", "\(Self.logPageSize + 1)",
-                    "HEAD",
-                    "--",
-                ], in: root, connection: connection)
+                let page: (commits: [GitCommit], hasMore: Bool)
+                if connection == nil {
+                    page = try await streamedPage(in: root, skip: skip, reset: reset)
+                } else {
+                    let output = try await GitRunner.run([
+                        "log",
+                        "--topo-order",
+                        "--decorate=full",
+                        "--format=\(GitCommit.logFormat)",
+                        "--skip=\(skip)",
+                        "-n", "\(Self.logPageSize + 1)",
+                        "HEAD",
+                        "--",
+                    ], in: root, connection: connection)
+                    let loaded = GitCommit.parseLog(output.text)
+                    page = (Array(loaded.prefix(Self.logPageSize)), loaded.count > Self.logPageSize)
+                }
                 guard generation == self.generation, requestID == self.logRequestID else { return }
 
-                let loaded = GitCommit.parseLog(output.text)
-                hasMoreCommits = loaded.count > Self.logPageSize
-                let newCommits = Array(loaded.prefix(Self.logPageSize))
-                commits = reset ? newCommits : commits + newCommits
+                hasMoreCommits = page.hasMore
+                commits = reset ? page.commits : commits + page.commits
                 logError = nil
                 retryLogFromStart = false
                 isLoadingLog = false
                 rebuildHistory()
+                if dropLogStreamWhenIdle { dropLogStream() }
             } catch {
                 guard generation == self.generation, requestID == self.logRequestID else { return }
+                // The next attempt starts a log of its own.
+                dropLogStream()
                 logError = error.localizedDescription
                 retryLogFromStart = reset
                 isLoadingLog = false
             }
+        }
+    }
+
+    /// A page of the log from the running `git log`, or from a new one when none is running or
+    /// the running one is not where this page starts.
+    private func streamedPage(
+        in root: String,
+        skip: Int,
+        reset: Bool
+    ) async throws -> (commits: [GitCommit], hasMore: Bool) {
+        let stream: GitLogStream
+        if !reset, let logStream, logStreamPosition == skip {
+            stream = logStream
+        } else {
+            dropLogStream()
+            stream = try GitLogStream(arguments: [
+                "log",
+                "--topo-order",
+                "--decorate=full",
+                "--format=\(GitCommit.logFormat)",
+                "--skip=\(skip)",
+                "HEAD",
+                "--",
+            ], in: root)
+            logStream = stream
+            logStreamPosition = skip
+        }
+
+        let page = try await stream.nextPage(records: Self.logPageSize)
+        let commits = GitCommit.parseLog(page.text)
+        if logStream === stream { logStreamPosition = skip + commits.count }
+        return (commits, page.hasMore)
+    }
+
+    private func dropLogStream() {
+        logStream?.cancel()
+        logStream = nil
+        dropLogStreamWhenIdle = false
+    }
+
+    /// Lets go of the running git while the History page isn't in use, since it can hold a lot
+    /// of memory in a big repository. A page that is being read finishes first. The next page
+    /// starts a new git where this one left off.
+    private func parkLogStream() {
+        if isLoadingLog {
+            dropLogStreamWhenIdle = logStream != nil
+        } else {
+            dropLogStream()
         }
     }
 
