@@ -7,10 +7,14 @@ struct ToolRailActions {
     let connectSSH: (SSHConnection) -> Void
     let toggleSidebar: (SidebarPanel) -> Void
     let openConfig: () -> Void
+
+    /// Runs a button the user added in `widgets.json`.
+    let runWidget: (ToolRailWidget) -> Void
 }
 
 /// The tool rail (`macos-tool-rail`): a narrow bar along the right edge of a terminal window
-/// with buttons for a new split, the sidebars and the configuration file.
+/// with buttons for a new split, the sidebars, the buttons the user added in `widgets.json`
+/// and the configuration file.
 ///
 /// The rail has no background of its own. It sits on the window background, so with
 /// `macos-window-vibrancy` the material shows through it like it does through the titlebar.
@@ -19,6 +23,7 @@ struct ToolRailView: View {
 
     @ObservedObject var sidebars: TerminalSidebars
     let actions: ToolRailActions
+    @ObservedObject private var widgets = ToolRailWidgetStore.shared
     @State private var showsSSHConnectionPicker = false
 
     var body: some View {
@@ -30,10 +35,14 @@ struct ToolRailView: View {
                     .frame(width: 1)
             }
 
-            // Drop the labels when the window is too short for all of them.
+            // Drop the labels when the window is too short for all of them, and scroll when it
+            // is too short for the buttons themselves.
             ViewThatFits(in: .vertical) {
                 buttons(showsLabels: true)
                 buttons(showsLabels: false)
+                ScrollView(.vertical, showsIndicators: false) {
+                    buttons(showsLabels: false)
+                }
             }
         }
         .popover(isPresented: $showsSSHConnectionPicker) {
@@ -69,6 +78,39 @@ struct ToolRailView: View {
             sidebarButton(.files, showsLabel: showsLabels)
             sidebarButton(.git, showsLabel: showsLabels)
 
+            if !widgets.widgets.isEmpty || widgets.problem != nil {
+                Rectangle()
+                    .fill(Color(nsColor: ChromePalette.separator))
+                    .frame(width: 20, height: 1)
+                    .padding(.vertical, 4)
+            }
+
+            ForEach(widgets.widgets) { widget in
+                ToolRailButton(
+                    title: widget.label,
+                    symbol: widget.icon ?? "terminal",
+                    tint: .custom(widget.tint),
+                    isActive: false,
+                    showsLabel: showsLabels,
+                    help: widget.help ?? widget.label,
+                    action: { actions.runWidget(widget) })
+                    .contextMenu {
+                        Button("Edit Widgets…", action: widgets.openFile)
+                    }
+            }
+
+            // A file that can't be read in full says so here, and opens for fixing.
+            if let problem = widgets.problem {
+                ToolRailButton(
+                    title: "Widgets",
+                    symbol: "exclamationmark.triangle",
+                    tint: .neutral,
+                    isActive: false,
+                    showsLabel: showsLabels,
+                    help: "\(problem). Click to edit.",
+                    action: widgets.openFile)
+            }
+
             Spacer(minLength: 0)
 
             ToolRailButton(
@@ -79,6 +121,9 @@ struct ToolRailView: View {
                 showsLabel: showsLabels,
                 help: "Open Configuration",
                 action: actions.openConfig)
+                .contextMenu {
+                    Button("Edit Widgets…", action: widgets.openFile)
+                }
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 4)
@@ -106,6 +151,9 @@ private struct ToolRailButton: View {
 
         /// Plain text color, for buttons that don't open a view.
         case neutral
+
+        /// A color of the user's choosing, or the chrome accent when there is none.
+        case custom(NSColor?)
     }
 
     let title: String
@@ -123,8 +171,7 @@ private struct ToolRailButton: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 2) {
-                Image(systemName: symbol)
-                    .font(.system(size: 15))
+                icon
                     .foregroundColor(iconColor)
                     .frame(height: 18)
 
@@ -151,6 +198,18 @@ private struct ToolRailButton: View {
         .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
+    /// The symbol, or the text of an icon that isn't a symbol (an emoji, a letter).
+    @ViewBuilder
+    private var icon: some View {
+        if NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil {
+            Image(systemName: symbol)
+                .font(.system(size: 15))
+        } else {
+            Text(String(symbol.prefix(2)))
+                .font(.system(size: 14))
+        }
+    }
+
     private var isHighlighted: Bool {
         isHovered || isActive
     }
@@ -162,6 +221,13 @@ private struct ToolRailButton: View {
             return chromeAccent.color(for: kind, inKeyWindow: controlActiveState == .key)
         case .neutral:
             return Color(nsColor: ChromePalette.text)
+        case .custom(let color):
+            let inKeyWindow = controlActiveState == .key
+            // Gray while the window isn't key, like the other buttons.
+            guard inKeyWindow, let color else {
+                return chromeAccent.color(for: .terminal, inKeyWindow: inKeyWindow)
+            }
+            return Color(nsColor: color)
         }
     }
 
@@ -176,7 +242,7 @@ private struct ToolRailButton: View {
     private var backgroundColor: Color {
         guard isHighlighted else { return .clear }
         switch tint {
-        case .kind:
+        case .kind, .custom:
             return highlightColor.opacity(0.13)
         case .neutral:
             return Color(nsColor: ChromePalette.hoverOverlay)

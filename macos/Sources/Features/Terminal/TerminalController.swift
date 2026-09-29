@@ -1162,7 +1162,8 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
                 },
                 connectSSH: { [weak self] in self?.connectSSH($0) },
                 toggleSidebar: { [weak self] in self?.sidebars.toggle($0) },
-                openConfig: { [weak self] in self?.ghostty.openConfig() }
+                openConfig: { [weak self] in self?.ghostty.openConfig() },
+                runWidget: { [weak self] in self?.runToolRailWidget($0) }
             ),
             extendsIntoTitlebar: config.macosTitlebarStyle == .hidden
         ) { [weak self] in
@@ -1638,6 +1639,37 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             _ = newSplit(at: source, direction: .right, baseConfig: config)
         } else {
             _ = Self.newTab(ghostty, from: window, withBaseConfig: config)
+        }
+    }
+
+    /// Runs a button of the tool rail (`widgets.json`) in a new terminal next to the focused one.
+    func runToolRailWidget(_ widget: ToolRailWidget) {
+        var config = Ghostty.SurfaceConfiguration()
+        config.command = widget.command
+        config.workingDirectory = widget.workingDirectory(focused: focusedSurface?.pwd)
+        config.waitAfterCommand = widget.keepOpen ?? false
+        sidebars.restoreZoom()
+
+        switch widget.placement {
+        case .split:
+            let direction: SplitTree<Ghostty.SurfaceView>.NewDirection = switch widget.splitDirection {
+            case .right: .right
+            case .left: .left
+            case .up: .up
+            case .down: .down
+            }
+
+            if let source = focusedSurface {
+                _ = newSplit(at: source, direction: direction, baseConfig: config)
+            } else {
+                _ = Self.newTab(ghostty, from: window, withBaseConfig: config)
+            }
+
+        case .tab:
+            _ = Self.newTab(ghostty, from: window, withBaseConfig: config)
+
+        case .window:
+            _ = Self.newWindow(ghostty, withBaseConfig: config)
         }
     }
 
