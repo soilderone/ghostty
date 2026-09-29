@@ -30,6 +30,9 @@ protocol TerminalViewModel: ObservableObject {
     /// and children. This should be @Published.
     var surfaceTree: SplitTree<Ghostty.SurfaceView> { get set }
 
+    /// The visual transition for an explicit split zoom or restore action.
+    var splitZoomTransition: SplitZoomTransition? { get }
+
     /// The command palette state.
     var commandPaletteIsShowing: Bool { get set }
 
@@ -81,6 +84,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
 
                     TerminalSplitTreeView(
                         tree: viewModel.surfaceTree,
+                        zoomTransition: viewModel.splitZoomTransition,
                         action: { delegate?.performSplitAction($0) })
                         .environmentObject(ghostty)
                         .ghosttyLastFocusedSurface(lastFocusedSurface)

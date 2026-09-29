@@ -25,8 +25,17 @@ enum TerminalSplitOperation {
     }
 }
 
+/// One explicit zoom action. The ID gives its incoming view fresh animation
+/// state; retaining only the surface ID does not keep a closed surface alive.
+struct SplitZoomTransition {
+    let id = UUID()
+    let targetID: UUID
+    let zoomingIn: Bool
+}
+
 struct TerminalSplitTreeView: View {
     let tree: SplitTree<Ghostty.SurfaceView>
+    let zoomTransition: SplitZoomTransition?
     let action: (TerminalSplitOperation) -> Void
 
     @EnvironmentObject private var ghostty: Ghostty.App
@@ -38,9 +47,10 @@ struct TerminalSplitTreeView: View {
 
     var body: some View {
         if let node = tree.zoomed ?? tree.root {
-            TerminalSplitSubtreeView(
+            let subtree = TerminalSplitSubtreeView(
                 node: node,
                 isRoot: node == tree.root,
+                excludedSurfaceID: nil,
                 action: action)
             // This is necessary because we can't rely on SwiftUI's implicit
             // structural identity to detect changes to this view. Due to
@@ -52,7 +62,130 @@ struct TerminalSplitTreeView: View {
             .padding(showsFrames ? SplitFrame.gap / 2 : 0)
             .environment(\.showsSplitFrames, showsFrames)
             .environment(\.splitFrameTree, SplitFrameTree(isSplit: tree.isSplit, isZoomed: tree.zoomed != nil))
+
+            if let zoomTransition, let root = tree.root,
+               root.find(id: zoomTransition.targetID) != nil {
+                SplitZoomAnimatedView(
+                    root: root,
+                    transition: zoomTransition,
+                    inset: showsFrames ? SplitFrame.gap / 2 : 0,
+                    showsFrames: showsFrames,
+                    action: action,
+                    content: subtree)
+                    .id(zoomTransition.id)
+            } else {
+                subtree
+            }
         }
+    }
+}
+
+/// Move the incoming tree from the selected pane's old bounds to its final
+/// bounds. The fading background omits the target pane, so its Metal-backed
+/// NSView is only mounted once during the transition.
+private struct SplitZoomAnimatedView<Content: View>: View {
+    let root: SplitTree<Ghostty.SurfaceView>.Node
+    let transition: SplitZoomTransition
+    let inset: CGFloat
+    let showsFrames: Bool
+    let action: (TerminalSplitOperation) -> Void
+    let content: Content
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var progress: CGFloat = 0
+    @State private var showsOutgoingSplits = true
+
+    private var sourceBounds: CGRect? {
+        guard let target = root.find(id: transition.targetID) else { return nil }
+        return root.spatial(within: CGSize(width: 1, height: 1))
+            .slots.first(where: { $0.node == target })?.bounds
+    }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            // Keep the other panes at their original size while they fade out.
+            // The target is a clear placeholder here, so its NSView only exists
+            // in the animated foreground.
+            if transition.zoomingIn && !reduceMotion && showsOutgoingSplits {
+                TerminalSplitSubtreeView(
+                    node: root,
+                    isRoot: true,
+                    excludedSurfaceID: transition.targetID,
+                    action: action)
+                    .id(root.structuralIdentity)
+                    .padding(inset)
+                    .environment(\.showsSplitFrames, showsFrames)
+                    .environment(\.splitFrameTree, SplitFrameTree(isSplit: true, isZoomed: false))
+                    .opacity(min(max(1 - progress, 0), 1))
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+
+            content
+                .modifier(SplitZoomGeometryEffect(
+                    sourceBounds: sourceBounds,
+                    zoomingIn: transition.zoomingIn,
+                    inset: inset,
+                    progress: reduceMotion ? 1 : progress))
+        }
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.9)) {
+                progress = 1
+            }
+        }
+        .task(id: transition.id) {
+            guard transition.zoomingIn && !reduceMotion else { return }
+            do {
+                try await Task.sleep(for: .milliseconds(700))
+            } catch {
+                return
+            }
+            showsOutgoingSplits = false
+        }
+    }
+}
+
+/// A geometry effect leaves SwiftUI's layout size alone while the incoming
+/// terminal grows or the full split tree settles back around it.
+private struct SplitZoomGeometryEffect: GeometryEffect {
+    let sourceBounds: CGRect?
+    let zoomingIn: Bool
+    let inset: CGFloat
+    var progress: CGFloat
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        guard let sourceBounds else { return ProjectionTransform(.identity) }
+
+        let innerWidth = size.width - 2 * inset
+        let innerHeight = size.height - 2 * inset
+        guard innerWidth > 0, innerHeight > 0 else { return ProjectionTransform(.identity) }
+
+        let source = CGRect(
+            x: inset + sourceBounds.minX * innerWidth,
+            y: inset + sourceBounds.minY * innerHeight,
+            width: sourceBounds.width * innerWidth,
+            height: sourceBounds.height * innerHeight)
+        guard source.width > 0, source.height > 0 else { return ProjectionTransform(.identity) }
+
+        let initialScaleX = zoomingIn ? source.width / size.width : size.width / source.width
+        let initialScaleY = zoomingIn ? source.height / size.height : size.height / source.height
+        let initialX = zoomingIn ? source.minX : -source.minX * initialScaleX
+        let initialY = zoomingIn ? source.minY : -source.minY * initialScaleY
+        let remaining = 1 - progress
+
+        return ProjectionTransform(CGAffineTransform(
+            a: 1 + (initialScaleX - 1) * remaining,
+            b: 0,
+            c: 0,
+            d: 1 + (initialScaleY - 1) * remaining,
+            tx: initialX * remaining,
+            ty: initialY * remaining))
     }
 }
 
@@ -63,12 +196,17 @@ private struct TerminalSplitSubtreeView: View {
 
     let node: SplitTree<Ghostty.SurfaceView>.Node
     var isRoot: Bool = false
+    let excludedSurfaceID: UUID?
     let action: (TerminalSplitOperation) -> Void
 
     var body: some View {
         switch node {
         case .leaf(let leafView):
-            TerminalSplitLeaf(surfaceView: leafView, isSplit: !isRoot, action: action)
+            if leafView.id == excludedSurfaceID {
+                Color.clear
+            } else {
+                TerminalSplitLeaf(surfaceView: leafView, isSplit: !isRoot, action: action)
+            }
 
         case .split(let split):
             let splitViewDirection: SplitViewDirection = switch split.direction {
@@ -87,10 +225,10 @@ private struct TerminalSplitSubtreeView: View {
                 dividerColor: showsFrames ? .clear : ghostty.config.splitDividerColor,
                 resizeIncrements: .init(width: 1, height: 1),
                 left: {
-                    TerminalSplitSubtreeView(node: split.left, action: action)
+                    TerminalSplitSubtreeView(node: split.left, excludedSurfaceID: excludedSurfaceID, action: action)
                 },
                 right: {
-                    TerminalSplitSubtreeView(node: split.right, action: action)
+                    TerminalSplitSubtreeView(node: split.right, excludedSurfaceID: excludedSurfaceID, action: action)
                 },
                 onEqualize: {
                     guard let surface = node.leftmostLeaf().surface else { return }

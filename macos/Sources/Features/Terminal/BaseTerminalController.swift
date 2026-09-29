@@ -53,6 +53,11 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
+    /// Only explicit split zoom actions animate. Restored windows and other tree
+    /// changes keep their existing layout behavior. The published tree update
+    /// delivers this value and the new layout together.
+    var splitZoomTransition: SplitZoomTransition?
+
     /// This can be set to show/hide the command palette.
     @Published var commandPaletteIsShowing: Bool = false
 
@@ -735,14 +740,19 @@ class BaseTerminalController: NSWindowController,
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard let targetNode = surfaceTree.root?.node(view: target) else { return }
 
+        // The animated background omits this target, so its Metal-backed view
+        // only appears once while the split tree changes.
+        let restoring = surfaceTree.zoomed == targetNode
+        guard restoring || surfaceTree.isSplit else { return }
+        splitZoomTransition = surfaceTree.zoomed == nil || restoring
+            ? SplitZoomTransition(targetID: target.id, zoomingIn: !restoring)
+            : nil
+
         // Toggle the zoomed state
         if surfaceTree.zoomed == targetNode {
             // Already zoomed, unzoom it
             surfaceTree = SplitTree(root: surfaceTree.root, zoomed: nil)
         } else {
-            // We require that the split tree have splits
-            guard surfaceTree.isSplit else { return }
-
             // Not zoomed or different node zoomed, zoom this node
             surfaceTree = SplitTree(root: surfaceTree.root, zoomed: targetNode)
         }
