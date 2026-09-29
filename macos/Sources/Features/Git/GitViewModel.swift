@@ -86,12 +86,14 @@ final class GitViewModel: ObservableObject {
         didSet {
             guard selectedCommit != oldValue else { return }
             commitDetail = nil
+            commitDetailError = nil
             selectedCommitFile = nil
             loadCommitDetail()
         }
     }
 
     @Published private(set) var commitDetail: GitCommitDetail?
+    @Published private(set) var commitDetailError: String?
 
     @Published var selectedCommitFile: GitChangedFile? {
         didSet {
@@ -116,6 +118,8 @@ final class GitViewModel: ObservableObject {
     private var timer: Timer?
     private var isVisible = false
     private var isWindowActive = false
+    private var retryLogFromStart = false
+    private var logRequestID = 0
 
     // MARK: Inputs
 
@@ -159,6 +163,7 @@ final class GitViewModel: ObservableObject {
 
     private func resetRepository() {
         generation += 1
+        logRequestID += 1
         root = nil
         gitDirectory = nil
         isRepository = nil
@@ -171,8 +176,10 @@ final class GitViewModel: ObservableObject {
         hasMoreCommits = false
         isLoadingLog = false
         logError = nil
+        retryLogFromStart = false
         selectedChange = nil
         selectedCommit = nil
+        commitDetailError = nil
     }
 
     // MARK: Status
@@ -257,12 +264,15 @@ final class GitViewModel: ObservableObject {
         }
 
         let headMoved = previous != nil && (previous?.head != newStatus.head || previous?.branch != newStatus.branch)
-        if page == .history && (headMoved || (commits.isEmpty && !isLoadingLog)) {
+        if page == .history && (headMoved || (commits.isEmpty && !isLoadingLog && logError == nil)) {
             loadLog(reset: true)
         } else if headMoved {
             // The History page reloads the log when it is next shown.
+            logRequestID += 1
             commits = []
             hasMoreCommits = false
+            isLoadingLog = false
+            logError = nil
             rebuildHistory()
         } else {
             rebuildHistory()
@@ -319,13 +329,19 @@ final class GitViewModel: ObservableObject {
         guard let root, !isLoadingLog || reset else { return }
         guard status?.head != nil else {
             // No commits yet.
+            logRequestID += 1
             commits = []
             hasMoreCommits = false
+            isLoadingLog = false
+            logError = nil
             rebuildHistory()
             return
         }
 
+        logError = nil
         isLoadingLog = true
+        logRequestID += 1
+        let requestID = logRequestID
         let generation = self.generation
         let skip = reset ? 0 : commits.count
         Task { @MainActor in
@@ -340,18 +356,20 @@ final class GitViewModel: ObservableObject {
                     "HEAD",
                     "--",
                 ], in: root)
-                guard generation == self.generation else { return }
+                guard generation == self.generation, requestID == self.logRequestID else { return }
 
                 let loaded = GitCommit.parseLog(output.text)
                 hasMoreCommits = loaded.count > Self.logPageSize
                 let newCommits = Array(loaded.prefix(Self.logPageSize))
                 commits = reset ? newCommits : commits + newCommits
                 logError = nil
+                retryLogFromStart = false
                 isLoadingLog = false
                 rebuildHistory()
             } catch {
-                guard generation == self.generation else { return }
+                guard generation == self.generation, requestID == self.logRequestID else { return }
                 logError = error.localizedDescription
+                retryLogFromStart = reset
                 isLoadingLog = false
             }
         }
@@ -359,8 +377,13 @@ final class GitViewModel: ObservableObject {
 
     /// Loads the next page once the list gets near its end.
     func rowAppeared(at index: Int) {
-        guard hasMoreCommits, !isLoadingLog, index >= historyRows.count - 30 else { return }
+        guard hasMoreCommits, !isLoadingLog, logError == nil,
+              index >= historyRows.count - 30 else { return }
         loadLog(reset: false)
+    }
+
+    func retryLog() {
+        loadLog(reset: retryLogFromStart || historyRows.isEmpty)
     }
 
     private func rebuildHistory() {
@@ -404,12 +427,19 @@ final class GitViewModel: ObservableObject {
                 detail.filesTruncated = files.truncated
 
                 guard generation == self.generation, selectedCommit == hash else { return }
+                commitDetailError = nil
                 commitDetail = detail
             } catch {
                 guard generation == self.generation, selectedCommit == hash else { return }
-                logError = error.localizedDescription
+                commitDetailError = error.localizedDescription
             }
         }
+    }
+
+    func retryCommitDetail() {
+        guard selectedCommit != nil else { return }
+        commitDetailError = nil
+        loadCommitDetail()
     }
 
     private func loadCommitFileDiff() {

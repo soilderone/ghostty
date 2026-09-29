@@ -36,7 +36,7 @@ struct GitView: View {
     private var content: some View {
         if let directory {
             if let error = model.error {
-                GitMessage(symbol: "exclamationmark.triangle", title: "Git failed", detail: error)
+                GitMessage(symbol: "exclamationmark.triangle", title: "Git failed", detail: error, retry: model.refresh)
             } else if model.isRepository == false {
                 GitMessage(symbol: "arrow.triangle.branch", title: "Not a git repository", detail: directory.path.abbreviatedPath)
             } else if model.status == nil {
@@ -301,10 +301,28 @@ private struct GitHistoryPage: View {
             GitCommitDetailView(detail: detail, onBack: back) { file in
                 model.selectedCommitFile = file
             }
+        } else if let error = model.commitDetailError {
+            VStack(spacing: 0) {
+                if let back {
+                    GitBackBar(title: "Commit", onBack: back)
+                    GitSeparator()
+                }
+                GitMessage(
+                    symbol: "exclamationmark.triangle",
+                    title: "Can't load the commit",
+                    detail: error,
+                    retry: model.retryCommitDetail)
+            }
         } else if model.selectedCommit != nil {
-            ProgressView()
-                .controlSize(.small)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VStack(spacing: 0) {
+                if let back {
+                    GitBackBar(title: "Commit", onBack: back)
+                    GitSeparator()
+                }
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         } else {
             GitMessage(symbol: "clock.arrow.circlepath", title: "Select a commit to see its changes")
         }
@@ -317,7 +335,11 @@ private struct GitCommitList: View {
     var body: some View {
         if model.historyRows.isEmpty {
             if let error = model.logError {
-                GitMessage(symbol: "exclamationmark.triangle", title: "Can't load the history", detail: error)
+                GitMessage(
+                    symbol: "exclamationmark.triangle",
+                    title: "Can't load the history",
+                    detail: error,
+                    retry: model.retryLog)
             } else if model.isLoadingLog {
                 ProgressView()
                     .controlSize(.small)
@@ -326,27 +348,53 @@ private struct GitCommitList: View {
                 GitMessage(symbol: "clock", title: "No commits yet")
             }
         } else {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(model.historyRows.enumerated()), id: \.element.id) { index, row in
-                        GitCommitRow(
-                            row: row,
-                            graph: index < model.graph.count ? model.graph[index] : nil,
-                            lanes: model.graphLanes,
-                            head: model.status?.head,
-                            isSelected: model.selectedCommit == row.id)
-                        .onTapGesture { select(row) }
-                        .onAppear { model.rowAppeared(at: index) }
-                    }
+            GeometryReader { geometry in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(model.historyRows.enumerated()), id: \.element.id) { index, row in
+                            GitCommitRow(
+                                row: row,
+                                graph: index < model.graph.count ? model.graph[index] : nil,
+                                lanes: graphLanes(near: index),
+                                totalLanes: model.graphLanes,
+                                availableWidth: geometry.size.width,
+                                head: model.status?.head,
+                                isSelected: model.selectedCommit == row.id)
+                            .onTapGesture { select(row) }
+                            .onAppear { model.rowAppeared(at: index) }
+                        }
 
-                    if model.isLoadingLog {
-                        ProgressView()
-                            .controlSize(.small)
-                            .padding(8)
+                        if let error = model.logError {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle")
+                                Text("History update failed: \(error)")
+                                    .lineLimit(2)
+                                Spacer(minLength: 4)
+                                Button("Retry", action: model.retryLog)
+                                    .buttonStyle(.borderless)
+                            }
+                            .font(.system(size: 11))
+                            .foregroundColor(Color(nsColor: ChromePalette.secondaryText))
+                            .padding(10)
+                        }
+
+                        if model.isLoadingLog {
+                            ProgressView()
+                                .controlSize(.small)
+                                .padding(8)
+                        }
                     }
                 }
             }
         }
+    }
+
+    /// Include adjacent rows so labels shift only around a change in graph width.
+    private func graphLanes(near index: Int) -> Int {
+        guard index < model.graph.count else { return 1 }
+        let first = max(0, index - 1)
+        let last = min(model.graph.count - 1, index + 1)
+        return model.graph[first...last].map(\.width).max() ?? 1
     }
 
     private func select(_ row: GitHistoryRow) {
@@ -366,6 +414,8 @@ private struct GitCommitRow: View {
     let row: GitHistoryRow
     let graph: GitGraph.Row?
     let lanes: Int
+    let totalLanes: Int
+    let availableWidth: CGFloat
     let head: String?
     let isSelected: Bool
 
@@ -377,6 +427,7 @@ private struct GitCommitRow: View {
                 GitGraphCell(
                     row: graph,
                     lanes: lanes,
+                    totalLanes: totalLanes,
                     isHead: commit?.hash == head,
                     isWorktree: commit == nil)
             }
@@ -386,24 +437,47 @@ private struct GitCommitRow: View {
                 Text("Uncommitted changes")
                     .italic()
                     .foregroundColor(Color(nsColor: ChromePalette.secondaryText))
+                Spacer(minLength: 4)
                 Text("\(changes)")
                     .font(.system(size: 11).monospacedDigit())
                     .foregroundColor(Color(nsColor: ChromePalette.tertiaryText))
-                Spacer(minLength: 0)
 
             case .commit(let commit):
-                ForEach(commit.refs.prefix(3), id: \.self) { ref in
-                    GitRefChip(ref: ref)
+                if availableWidth >= 420 {
+                    ForEach(commit.refs.prefix(2), id: \.self) { ref in
+                        GitRefChip(ref: ref)
+                    }
+                    if commit.refs.count > 2 {
+                        Text("+\(commit.refs.count - 2)")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(Color(nsColor: ChromePalette.secondaryText))
+                            .help(commit.refs.dropFirst(2).map(\.name).joined(separator: ", "))
+                    }
                 }
                 Text(commit.subject)
                     .foregroundColor(Color(nsColor: ChromePalette.text))
                     .lineLimit(1)
+                    .layoutPriority(1)
                 Spacer(minLength: 4)
-                Text(gitRelativeDate(commit.date))
-                    .font(.system(size: 11))
-                    .foregroundColor(Color(nsColor: ChromePalette.tertiaryText))
-                    .lineLimit(1)
-                    .fixedSize()
+                if availableWidth >= 600 {
+                    Text(gitRelativeDate(commit.date))
+                        .font(.system(size: 11))
+                        .foregroundColor(Color(nsColor: ChromePalette.tertiaryText))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(commit.hash, forType: .string)
+                } label: {
+                    Text(commit.shortHash)
+                        .font(.system(size: 10.5, design: .monospaced))
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(Color(nsColor: ChromePalette.tertiaryText))
+                .fixedSize()
+                .help("Copy full commit ID")
+                .accessibilityLabel("Copy full commit ID \(commit.shortHash)")
             }
         }
         .font(.system(size: 12))
@@ -423,7 +497,9 @@ private struct GitCommitRow: View {
 
     private var helpText: String {
         guard let commit else { return "Uncommitted changes" }
-        return "\(commit.shortHash) · \(commit.author) · \(commit.subject)"
+        let summary = "\(commit.shortHash) · \(commit.author) · \(gitRelativeDate(commit.date)) · \(commit.subject)"
+        guard !commit.refs.isEmpty else { return summary }
+        return summary + "\n" + commit.refs.map(\.name).joined(separator: ", ")
     }
 }
 
@@ -448,12 +524,13 @@ private struct GitRefChip: View {
             Text(ref.name)
                 .font(.system(size: 10.5, weight: ref.isHead ? .semibold : .medium))
                 .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: 140, alignment: .leading)
         }
         .foregroundColor(Color(nsColor: color))
         .padding(.horizontal, 5)
         .frame(height: 16)
         .background(RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: color).opacity(0.16)))
-        .fixedSize()
     }
 }
 
@@ -702,6 +779,7 @@ private struct GitMessage: View {
     let symbol: String
     let title: String
     var detail: String?
+    var retry: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 6) {
@@ -716,6 +794,10 @@ private struct GitMessage: View {
                     .font(.system(size: 11))
                     .foregroundColor(Color(nsColor: ChromePalette.tertiaryText))
                     .textSelection(.enabled)
+            }
+            if let retry {
+                Button("Retry", action: retry)
+                    .buttonStyle(.bordered)
             }
         }
         .multilineTextAlignment(.center)

@@ -96,7 +96,8 @@ enum GitGraph {
                 laneColors.removeLast()
             }
 
-            let width = ([lane] + (through + incoming + outgoing).map(\.lane)).max().map { $0 + 1 } ?? 1
+            let usedLanes = through.map(\.lane) + incoming.map(\.lane) + outgoing.map(\.lane)
+            let width = max(lane, usedLanes.max() ?? lane) + 1
             rows.append(.init(
                 lane: lane,
                 color: color,
@@ -113,13 +114,16 @@ enum GitGraph {
 struct GitGraphCell: View {
     static let laneWidth: CGFloat = 14
 
-    /// Lanes past this are cut off so a wide history doesn't push the subjects away.
+    /// Wider graphs are compressed into this many columns so commits stay visible.
     static let maxLanes = 16
 
     let row: GitGraph.Row
 
-    /// The number of lanes the whole visible history uses, so every row's cell is as wide.
+    /// The lanes used near this row; distant branches do not reserve empty space.
     let lanes: Int
+
+    /// The same lane spacing is used on every row so lines meet at row edges.
+    let totalLanes: Int
 
     /// Whether the commit is HEAD, drawn as a ring.
     var isHead: Bool = false
@@ -130,9 +134,10 @@ struct GitGraphCell: View {
     var body: some View {
         Canvas { context, size in
             let mid = size.height / 2
+            let laneWidth = size.width / CGFloat(max(lanes, 1))
 
             func x(_ lane: Int) -> CGFloat {
-                CGFloat(lane) * Self.laneWidth + Self.laneWidth / 2
+                CGFloat(lane) * laneWidth + laneWidth / 2
             }
 
             func stroke(_ path: Path, _ color: Int, dashed: Bool = false) {
@@ -170,7 +175,7 @@ struct GitGraphCell: View {
                 stroke(connect(from: node, to: CGPoint(x: x(edge.lane), y: size.height)), edge.color, dashed: isWorktree)
             }
 
-            let radius: CGFloat = 4
+            let radius = min(CGFloat(4), laneWidth / 3)
             let dot = Path(ellipseIn: CGRect(x: node.x - radius, y: node.y - radius, width: radius * 2, height: radius * 2))
             if isWorktree {
                 stroke(dot, row.color, dashed: true)
@@ -181,7 +186,9 @@ struct GitGraphCell: View {
                 context.fill(dot, with: .color(Self.color(row.color)))
             }
         }
-        .frame(width: CGFloat(min(max(lanes, 1), Self.maxLanes)) * Self.laneWidth)
+        .frame(width: CGFloat(max(lanes, 1)) * min(
+            Self.laneWidth,
+            CGFloat(Self.maxLanes) * Self.laneWidth / CGFloat(max(totalLanes, 1))))
         .clipped()
         .accessibilityHidden(true)
     }
