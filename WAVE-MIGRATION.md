@@ -298,11 +298,12 @@ Python 3（仅 Files 需要），见 changelog。
 
 **确定的设计**
 
-- 分屏标题栏和工具栏有 SSH 入口；候选来自最近使用的主机、`~/.ssh/config` 和
-  `/etc/ssh/ssh_config`（含 Include）。也可输入 `host`、`user@host`、`user@host:port`。
-  在新分屏连接，原本的本地终端仍在。认证、主机密钥与跳板机配置交给系统 OpenSSH。
-- 连接使用每个进程自己的私有 ControlPath。Files/Git 的后台命令使用 `BatchMode`，不在
-  界面背后弹密码或主机密钥确认；首次认证在 SSH 终端完成。不会保存凭据。
+- 分屏标题栏和工具栏有 SSH 入口；紧凑的搜索选择器把最近连接与 SSH config 主机分组，
+  候选来自 `~/.ssh/config` 和 `/etc/ssh/ssh_config`（含 Include）。也可输入 `host`、
+  `user@host`、`user@host:port`。连接在新分屏打开，原本的本地终端仍在。
+- 认证、主机密钥与跳板机配置仍由系统 OpenSSH 处理；打包的 askpass 辅助程序为首次主机密钥
+  确认、密码和密钥口令显示独立弹窗。连接使用每个进程自己的私有 ControlPath。Files/Git
+  的后台命令使用 `BatchMode`，不会在界面背后弹验证窗。不会保存凭据。
 - 远端 Files/Git 从远端 home 打开，用户通过路径栏手动切换目录，两个面板共享这一位置。
   按本次选择，终端里的 `cd` 不自动切换面板目录。Ghostty 核心仍拒绝远端 OSC 7，
   不会把远端路径误当成本地 cwd。
