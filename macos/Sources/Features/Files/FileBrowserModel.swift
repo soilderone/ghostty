@@ -160,12 +160,9 @@ final class FileBrowserModel: ObservableObject {
     }
 
     func setExpanded(_ directory: URL, _ isExpanded: Bool) {
-        if isExpanded {
-            expanded.insert(directory)
-        } else {
-            expanded.remove(directory)
-        }
-        updateWatcher()
+        // Reloading the tree reports every folder that stays open again.
+        let changed = isExpanded ? expanded.insert(directory).inserted : expanded.remove(directory) != nil
+        if changed { updateWatcher() }
     }
 
     /// Reads every folder again, such as after the sort changes.
@@ -366,10 +363,23 @@ final class FileBrowserModel: ObservableObject {
         }
         guard let folder else { return [] }
 
-        let entries = (try? FileEntry.list(folder, readPermissions: false)) ?? []
-        let matches = entries.filter { entry in
-            (showsHidden || !entry.isHidden || prefix.hasPrefix(".")) &&
-                entry.name.lowercased().hasPrefix(prefix.lowercased())
+        // This runs on every keystroke, so a folder of tens of thousands of files can't be read
+        // in full each time: the tree's listing is reused when it has one, and otherwise only
+        // the names are read, and only the ones that match are looked at any closer.
+        let lowercasedPrefix = prefix.lowercased()
+        let listsHidden = showsHidden || prefix.hasPrefix(".")
+        let matches: [FileEntry]
+        if let cached = listings[folder] {
+            matches = cached.filter { entry in
+                (listsHidden || !entry.isHidden) && entry.name.lowercased().hasPrefix(lowercasedPrefix)
+            }
+        } else {
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+            matches = names.compactMap { name in
+                guard listsHidden || !name.hasPrefix("."),
+                      name.lowercased().hasPrefix(lowercasedPrefix) else { return nil }
+                return FileEntry(url: folder.appendingPathComponent(name))
+            }
         }
         return FileSortKey.name.sorted(matches, ascending: true)
             .prefix(limit)

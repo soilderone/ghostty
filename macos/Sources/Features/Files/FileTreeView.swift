@@ -67,6 +67,11 @@ struct FileTreeView: NSViewRepresentable {
         private var parentNode: FileNode?
         private var expandTimer: Timer?
 
+        /// The outline asks for a folder's children one index at a time, so the list is built
+        /// once per folder and kept until the model's revision changes.
+        private var childCache: [URL: [Any]] = [:]
+        private var childCacheRevision = -1
+
         init(model: FileBrowserModel) {
             self.model = model
         }
@@ -114,19 +119,35 @@ struct FileTreeView: NSViewRepresentable {
 
         private func rootChildren() -> [Any] {
             guard let root = model.root else { return [] }
-            var children: [Any] = []
-            if root.path != "/" {
-                if parentNode == nil { parentNode = FileNode(parentOf: root) }
-                if let parentNode { children.append(parentNode) }
+            return cachedChildren(of: root) {
+                var children: [Any] = []
+                if root.path != "/" {
+                    if parentNode == nil { parentNode = FileNode(parentOf: root) }
+                    if let parentNode { children.append(parentNode) }
+                }
+                children += model.children(of: root).map(node(for:))
+                return children
             }
-            children += model.children(of: root).map(node(for:))
-            return children
         }
 
         private func children(of item: Any?) -> [Any] {
             guard let node = item as? FileNode else { return rootChildren() }
             guard node.entry.isDirectory, !node.isParentLink else { return [] }
-            return model.children(of: node.entry.url).map(node(for:))
+            let directory = node.entry.url
+            return cachedChildren(of: directory) {
+                model.children(of: directory).map(node(for:))
+            }
+        }
+
+        private func cachedChildren(of directory: URL, build: () -> [Any]) -> [Any] {
+            if childCacheRevision != model.revision {
+                childCache = [:]
+                childCacheRevision = model.revision
+            }
+            if let cached = childCache[directory] { return cached }
+            let children = build()
+            childCache[directory] = children
+            return children
         }
 
         // MARK: Data Source
