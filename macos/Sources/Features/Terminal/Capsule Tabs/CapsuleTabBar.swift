@@ -140,7 +140,8 @@ struct CapsuleTabBar: View {
 // MARK: Tab
 
 /// One tab: a dot, the title and a close button. The dot takes the accent on the selected
-/// tab, and a tab color tints the whole capsule.
+/// tab, and a tab color tints the whole capsule. A badge (a command failed, the bell rang)
+/// takes the dot's place until the tab is looked at.
 private struct CapsuleTabView: View {
     let tab: CapsuleTabs.Tab
     let isSelected: Bool
@@ -162,17 +163,24 @@ private struct CapsuleTabView: View {
                 .padding(2)
 
             HStack(spacing: 0) {
-                Circle()
-                    .fill(isSelected ? accent : Color(nsColor: ChromePalette.tertiaryText).opacity(0.7))
-                    .frame(width: 6, height: 6)
-                    .padding(.leading, 14)
+                Group {
+                    if let badge = tab.badge {
+                        TerminalBadgeIcon(badge: badge, size: 11)
+                    } else {
+                        Circle()
+                            .fill(isSelected ? accent : Color(nsColor: ChromePalette.tertiaryText).opacity(0.7))
+                            .frame(width: 6, height: 6)
+                    }
+                }
+                .frame(width: 12, height: 12)
+                .padding(.leading, 11)
 
                 Text(title)
                     .font(.system(size: 12.5, weight: isSelected ? .semibold : .medium))
                     .foregroundColor(Color(nsColor: isSelected ? ChromePalette.text : ChromePalette.secondaryText))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .padding(.leading, 7)
+                    .padding(.leading, 4)
 
                 Spacer(minLength: 2)
 

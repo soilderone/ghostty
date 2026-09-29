@@ -32,6 +32,16 @@ class TerminalWindow: NSWindow {
         return view
     }()
 
+    /// Shows the badge of the tab (see ``TerminalBadge``) in the native tab bar.
+    private lazy var tabBadgeIndicator: NSHostingView<TabBadgeIndicatorView> = {
+        let view = NSHostingView(rootView: TabBadgeIndicatorView(badge: tabBadge))
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    /// Keeps the tab's badge up to date as its terminals get and lose theirs.
+    private var badgeObserver: NSObjectProtocol?
+
     /// The configuration derived from the Ghostty config so we don't need to rely on references.
     private(set) var derivedConfig: DerivedConfig = .init()
 
@@ -78,6 +88,19 @@ class TerminalWindow: NSWindow {
             invalidateRestorableState()
             NotificationCenter.default.post(name: CapsuleTabs.tabsDidChange, object: self)
         }
+    }
+
+    /// The most urgent badge of the terminals in this window's tab, which is a window of its
+    /// own. Read from the terminals, so it is right when one of them closes too.
+    var tabBadge: TerminalBadge? {
+        terminalController?.surfaceTree.map(\.badge).mostUrgent
+    }
+
+    /// Redraws what shows the tab's badge. Call this when a terminal's badge changes or a
+    /// terminal comes or goes.
+    func refreshTabBadge() {
+        tabBadgeIndicator.rootView = TabBadgeIndicatorView(badge: tabBadge)
+        NotificationCenter.default.post(name: CapsuleTabs.tabsDidChange, object: self)
     }
 
     // MARK: NSWindow Overrides
@@ -177,10 +200,21 @@ class TerminalWindow: NSWindow {
         stackView.setHuggingPriority(.defaultHigh, for: .horizontal)
         stackView.spacing = 4
         stackView.alignment = .centerY
+        stackView.addArrangedSubview(tabBadgeIndicator)
         stackView.addArrangedSubview(tabColorIndicator)
         stackView.addArrangedSubview(keyEquivalentLabel)
         stackView.addArrangedSubview(resetZoomTabButton)
         tab.accessoryView = stackView
+
+        badgeObserver = NotificationCenter.default.addObserver(
+            forName: .ghosttyBadgeDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self, let surface = notification.object as? Ghostty.SurfaceView,
+                  self.terminalController?.surfaceTree.contains(where: { $0 === surface }) == true else { return }
+            self.refreshTabBadge()
+        }
 
         // Get our saved level
         level = UserDefaults.ghostty.value(forKey: Self.defaultLevelKey) as? NSWindow.Level ?? .normal
@@ -690,6 +724,9 @@ class TerminalWindow: NSWindow {
         if let observer = tabMenuObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        if let observer = badgeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     // MARK: Config
@@ -810,6 +847,17 @@ private struct TabColorIndicatorView: View {
                 .fill(Color.clear)
                 .frame(width: 6, height: 6)
                 .hidden()
+        }
+    }
+}
+
+/// The badge of the tab, drawn in the native tab bar. Nothing when there is none.
+private struct TabBadgeIndicatorView: View {
+    let badge: TerminalBadge?
+
+    var body: some View {
+        if let badge {
+            TerminalBadgeIcon(badge: badge, size: 10)
         }
     }
 }

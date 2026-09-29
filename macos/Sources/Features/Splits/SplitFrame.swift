@@ -241,6 +241,11 @@ private struct SplitHeader: View {
             // Clicks go through to the drag source behind.
             .allowsHitTesting(false)
 
+            // Something happened here while it wasn't focused.
+            if let badge = surfaceView.badge {
+                TerminalBadgeIcon(badge: badge, size: 11)
+            }
+
             Spacer(minLength: 0)
 
             controls

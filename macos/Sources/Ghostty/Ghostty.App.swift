@@ -1602,6 +1602,7 @@ extension Ghostty {
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
                 guard let title = String(cString: n.title!, encoding: .utf8) else { return }
                 guard let body = String(cString: n.body!, encoding: .utf8) else { return }
+                surfaceView.raiseBadge(.notification)
                 showDesktopNotification(surfaceView, title: title, body: body)
 
             default:
@@ -1644,6 +1645,14 @@ extension Ghostty {
             case GHOSTTY_TARGET_SURFACE:
                 guard let surface = target.target.surface else { return }
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
+
+                // The badge on the surface doesn't depend on the notification settings, only on
+                // how long the command took.
+                if let config = (NSApplication.shared.delegate as? AppDelegate)?.ghostty.config,
+                   Duration.nanoseconds(v.duration) >= config.notifyOnCommandFinishAfter,
+                   let badge = TerminalBadge(exitCode: Int(v.exit_code)) {
+                    surfaceView.raiseBadge(badge)
+                }
 
                 // Determine if we even care about command finish notifications
                 guard let config = (NSApplication.shared.delegate as? AppDelegate)?.ghostty.config else { return }

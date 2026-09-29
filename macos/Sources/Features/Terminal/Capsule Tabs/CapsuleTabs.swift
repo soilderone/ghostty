@@ -14,6 +14,7 @@ final class CapsuleTabs: NSObject, ObservableObject {
         let id: ObjectIdentifier
         let title: String
         let color: TerminalTabColor
+        let badge: TerminalBadge?
         let isZoomed: Bool
 
         init(window: NSWindow) {
@@ -21,6 +22,7 @@ final class CapsuleTabs: NSObject, ObservableObject {
             self.id = ObjectIdentifier(window)
             self.title = window.title
             self.color = terminalWindow?.tabColor ?? .none
+            self.badge = terminalWindow?.tabBadge
             self.isZoomed = terminalWindow?.surfaceIsZoomed ?? false
         }
     }
@@ -38,7 +40,7 @@ final class CapsuleTabs: NSObject, ObservableObject {
         }
     }
 
-    /// Posted when something a tab shows changes: its title, color or zoom.
+    /// Posted when something a tab shows changes: its title, color, badge or zoom.
     static let tabsDidChange = Notification.Name("com.mitchellh.ghostty.capsuleTabsDidChange")
 
     static let toolbarItem = NSToolbarItem.Identifier("com.mitchellh.ghostty.capsuleTabs")

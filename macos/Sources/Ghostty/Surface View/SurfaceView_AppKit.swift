@@ -113,6 +113,15 @@ extension Ghostty {
         /// True when the bell is active. This is set inactive on focus or event.
         @Published private(set) var bell: Bool = false
 
+        /// What happened here while the surface wasn't focused: a command finished, the bell
+        /// rang, a notification came in. It is cleared when the surface gets the focus.
+        @Published private(set) var badge: TerminalBadge? {
+            didSet {
+                guard badge != oldValue else { return }
+                NotificationCenter.default.post(name: .ghosttyBadgeDidChange, object: self)
+            }
+        }
+
         /// A clipboard confirmation waiting to be handled by its controller.
         @Published var pendingClipboardConfirmation: ClipboardConfirmationRequest? {
             didSet {
@@ -473,6 +482,7 @@ extension Ghostty {
 
                 // We unset our bell state if we gained focus
                 bell = false
+                badge = nil
 
                 // Remove any notifications for this surface once we gain focus.
                 if !notificationIdentifiers.isEmpty {
@@ -807,6 +817,15 @@ extension Ghostty {
         @objc private func ghosttyBellDidRing(_ notification: SwiftUI.Notification) {
             // Bell state goes to true
             bell = true
+            raiseBadge(.bell)
+        }
+
+        /// Marks the surface with something that happened in it. A focused surface is being
+        /// looked at, so it gets nothing; the badge is kept if it is more urgent than this one.
+        func raiseBadge(_ new: TerminalBadge) {
+            guard !focused else { return }
+            if let badge, badge >= new { return }
+            badge = new
         }
 
         @objc private func windowDidChangeScreen(notification: SwiftUI.Notification) {

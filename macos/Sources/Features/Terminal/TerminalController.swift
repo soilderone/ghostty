@@ -193,6 +193,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         // Update our zoom state
         if let window = window as? TerminalWindow {
             window.surfaceIsZoomed = to.zoomed != nil
+            window.refreshTabBadge()
         }
 
         // If our surface tree is now nil then we close our window.
