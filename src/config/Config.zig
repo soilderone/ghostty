@@ -3539,8 +3539,14 @@ keybind: Keybinds = .{},
 /// is false. The frame, its header and the gaps take space from the terminal,
 /// but `window-width` and `window-height` still size the terminal itself.
 ///
+/// Zooming a terminal floats its card over the others instead of filling the
+/// window: it takes most of the area with a margin around it, and the other
+/// terminals stay where they are behind a wash of the window background.
+/// Clicking the wash restores the split.
+///
 /// If false, terminals fill the window edge to edge and splits are separated
-/// by a thin divider. The quick terminal never has frames.
+/// by a thin divider, and a zoomed terminal fills the window. The quick
+/// terminal never has frames.
 ///
 /// The default value is true.
 @"macos-split-frame": bool = true,

@@ -45,6 +45,30 @@ struct TerminalSplitTreeView: View {
         splitFramesAllowed && ghostty.config.macosSplitFrame
     }
 
+    /// The terminal that floats over the others while it is zoomed. Without frames there is
+    /// no canvas to float over, so a zoomed terminal fills the area instead.
+    private var floatingTarget: Ghostty.SurfaceView? {
+        guard showsFrames, tree.isSplit, case .leaf(let view)? = tree.zoomed else { return nil }
+        return view
+    }
+
+    /// The terminal that is settling back into its place after a restore. It floats until it
+    /// gets there.
+    private var restoringTarget: Ghostty.SurfaceView? {
+        guard showsFrames, tree.isSplit, tree.zoomed == nil,
+              let zoomTransition, !zoomTransition.zoomingIn,
+              case .leaf(let view)? = tree.root?.find(id: zoomTransition.targetID) else { return nil }
+        return view
+    }
+
+    /// Only a zoom into this terminal animates; anything else shows it floating as it is.
+    private func floatingMotion(for target: Ghostty.SurfaceView) -> SplitFloatingZoom.Motion? {
+        guard let zoomTransition, zoomTransition.zoomingIn, zoomTransition.targetID == target.id else {
+            return nil
+        }
+        return .zoomingIn
+    }
+
     var body: some View {
         if let node = tree.zoomed ?? tree.root {
             let subtree = TerminalSplitSubtreeView(
@@ -63,8 +87,26 @@ struct TerminalSplitTreeView: View {
             .environment(\.showsSplitFrames, showsFrames)
             .environment(\.splitFrameTree, SplitFrameTree(isSplit: tree.isSplit, isZoomed: tree.zoomed != nil))
 
-            if let zoomTransition, let root = tree.root,
-               root.find(id: zoomTransition.targetID) != nil {
+            if let root = tree.root, let target = floatingTarget {
+                // The transition's ID gives each zoom its own animation state.
+                SplitFloatingZoom(
+                    root: root,
+                    target: target,
+                    motion: floatingMotion(for: target),
+                    action: action)
+                    .id(zoomTransition?.id)
+            } else if let root = tree.root, let target = restoringTarget, let zoomTransition {
+                SplitFloatingRestore(
+                    root: root,
+                    target: target,
+                    transition: zoomTransition,
+                    action: action,
+                    content: subtree)
+                    .id(zoomTransition.id)
+            } else if !showsFrames, let zoomTransition, let root = tree.root,
+                      root.find(id: zoomTransition.targetID) != nil {
+                // Without frames the zoomed terminal fills the whole area. With them, a
+                // tree that is no longer zoomed needs no animation, so it falls through.
                 SplitZoomAnimatedView(
                     root: root,
                     transition: zoomTransition,
@@ -189,7 +231,7 @@ private struct SplitZoomGeometryEffect: GeometryEffect {
     }
 }
 
-private struct TerminalSplitSubtreeView: View {
+struct TerminalSplitSubtreeView: View {
     @EnvironmentObject var ghostty: Ghostty.App
 
     @Environment(\.showsSplitFrames) private var showsFrames
@@ -239,7 +281,7 @@ private struct TerminalSplitSubtreeView: View {
     }
 }
 
-private struct TerminalSplitLeaf: View {
+struct TerminalSplitLeaf: View {
     let surfaceView: Ghostty.SurfaceView
     let isSplit: Bool
     let action: (TerminalSplitOperation) -> Void
