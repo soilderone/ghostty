@@ -27,6 +27,7 @@ Ghostty fork 里重新实现的功能。目标平台**只有 macOS 版**。
 | 8   | 胶囊 tab 栏                     | 高    | —     | CI 构建通过 |
 | 9   | Git 视图                        | 高    | P3    | CI 构建通过 |
 | 10  | 文件浏览器                      | 高    | P3    | CI 构建通过 |
+| 12  | SSH 终端与远端 Files/Git        | 高    | 9、10 | 待 CI 验证  |
 | 11  | AI 面板、工具与访问级别         | 极高  | P3    | 暂缓        |
 
 ---
@@ -290,6 +291,32 @@ Wave 原本只有简单的目录预览，fork 把它做成了 IDE 风格的浏�
 `preview-directory-utils.tsx`、`preview-path.ts`、`preview-model.tsx`），
 `frontend/app/element/markdown.tsx`。
 
+### 12. SSH 终端与远端 Files/Git — 高
+
+**状态：待 CI 验证。** 代码在 `macos/Sources/Features/SSH/`，使用本机 OpenSSH 和远端
+Python 3（仅 Files 需要），见 changelog。
+
+**确定的设计**
+
+- 分屏标题栏和工具栏有 SSH 入口；候选来自最近使用的主机、`~/.ssh/config` 和
+  `/etc/ssh/ssh_config`（含 Include）。也可输入 `host`、`user@host`、`user@host:port`。
+  在新分屏连接，原本的本地终端仍在。认证、主机密钥与跳板机配置交给系统 OpenSSH。
+- 连接使用每个进程自己的私有 ControlPath。Files/Git 的后台命令使用 `BatchMode`，不在
+  界面背后弹密码或主机密钥确认；首次认证在 SSH 终端完成。不会保存凭据。
+- 远端 Files/Git 从远端 home 打开，用户通过路径栏手动切换目录，两个面板共享这一位置。
+  按本次选择，终端里的 `cd` 不自动切换面板目录。Ghostty 核心仍拒绝远端 OSC 7，
+  不会把远端路径误当成本地 cwd。
+- Git 仍是只读 Changes、History 和 diff；远端 `git` 通过 SSH 执行。Files 可列目录、
+  排序、过滤、预览、创建、重命名、移动和移到远端废纸篓；远端预览不会调用本地 Finder。
+  SSH 目标随终端的窗口恢复保存，断开后可从标题栏重连。
+- 远端 Files 采用逐目录浏览；本地浏览器的系统 Quick Look、Finder、拖拽、多选和
+  模糊查找不用于远端。远端 Markdown 的相对图片暂不加载。远端命令和路径按 POSIX
+  主机设计（Linux/macOS），未覆盖 Windows SSH shell。
+
+**Wave 参考：** `pkg/remote/sshclient.go`、`pkg/remote/conncontroller/`、
+`pkg/blockcontroller/shellcontroller.go`、`frontend/app/modals/conntypeahead.tsx`、
+`frontend/app/block/connectionbutton.tsx`。
+
 ### 11. AI 面板、工具与访问级别 — 极高
 
 **状态：暂缓。**
@@ -337,5 +364,4 @@ Wave 自身的问题修复，或在 Ghostty 里没有对应物的功能：
 - tab 视图缓存回收、markdown 重复挂载、文件树行、git 轮询等性能优化——属于 Electron/React
   特有的问题。git 轮询规则已并入功能 9。
 - 网页块（地址栏胶囊、首次点击修复）——Ghostty 没有内置浏览器。
-- 连接标识（`local` / `user@host`）——Ghostty 没有连接管理。
 - 引导页、应用构建器（tsunami）以及 Wave 云端模式相关的调整。
