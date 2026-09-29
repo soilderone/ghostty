@@ -64,8 +64,9 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// The sidebars beside the split tree.
     let sidebars = TerminalSidebars()
 
-    /// Invalidates the restorable state when the sidebars open, close or resize.
+    /// Invalidates the restorable state when the sidebars open, close, resize or zoom.
     private var sidebarsCancellable: AnyCancellable?
+    private var zoomedSidebarCancellable: AnyCancellable?
 
     init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
@@ -143,6 +144,9 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         sidebarsCancellable = sidebars.sidePublisher(.leading)
             .merge(with: sidebars.sidePublisher(.trailing))
             .dropFirst(2)
+            .sink { [weak self] _ in self?.invalidateRestorableState() }
+        zoomedSidebarCancellable = sidebars.zoomPublisher()
+            .dropFirst()
             .sink { [weak self] _ in self?.invalidateRestorableState() }
     }
 
@@ -1073,15 +1077,20 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             // Restore focus to the previously focused surface
             if let focusedUUID = undoState.focusedSurface,
                let focusTarget = surfaceTree.first(where: { $0.id == focusedUUID }) {
-                DispatchQueue.main.async {
-                    Ghostty.moveFocus(to: focusTarget, from: nil)
+                focusedSurface = focusTarget
+                if sidebars.zoomed == nil {
+                    DispatchQueue.main.async {
+                        Ghostty.moveFocus(to: focusTarget, from: nil)
+                    }
                 }
             } else if let focusedSurface = surfaceTree.first {
                 // No prior focused surface or we can't find it, let's focus
                 // the first.
                 self.focusedSurface = focusedSurface
-                DispatchQueue.main.async {
-                    Ghostty.moveFocus(to: focusedSurface, from: nil)
+                if sidebars.zoomed == nil {
+                    DispatchQueue.main.async {
+                        Ghostty.moveFocus(to: focusedSurface, from: nil)
+                    }
                 }
             }
         }
@@ -1145,6 +1154,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             toolRailActions: .init(
                 newSplit: { [weak self] in
                     guard let self else { return }
+                    self.sidebars.restoreZoom()
                     self.splitRight(self)
                 },
                 toggleSidebar: { [weak self] in self?.sidebars.toggle($0) },
@@ -1310,6 +1320,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     }
 
     override func windowDidBecomeKey(_ notification: Notification) {
+        (window?.contentView as? TerminalViewContainer)?.focusZoomedSidebarIfNeeded()
         super.windowDidBecomeKey(notification)
         self.relabelTabs()
         self.fixTabBar()
@@ -1572,6 +1583,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// user can review the text and run it.
     private func typeInFocusedSurface(_ text: String) {
         guard let focusedSurface else { return }
+        sidebars.restoreZoom()
         focusedSurface.surfaceModel?.sendText(text)
         Ghostty.moveFocus(to: focusedSurface)
     }

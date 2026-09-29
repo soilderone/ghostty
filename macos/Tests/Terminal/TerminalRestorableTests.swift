@@ -13,6 +13,20 @@ struct TerminalRestorableTests {
         #expect(QuickTerminalRestorableState.minimumVersion == 1)
     }
 
+    @Test func sidebarZoomStateDecodesOldWindows() throws {
+        let oldState = Data("""
+        {"leading":{"panel":"files","width":260},"trailing":{"panel":"git","width":260}}
+        """.utf8)
+        let decoded = try JSONDecoder().decode(TerminalSidebars.State.self, from: oldState)
+        #expect(decoded.leading.panel == .files)
+        #expect(decoded.trailing.panel == .git)
+        #expect(decoded.zoomed == nil)
+
+        let zoomed = TerminalSidebars.State(leading: decoded.leading, trailing: decoded.trailing, zoomed: .files)
+        let restored = try JSONDecoder().decode(TerminalSidebars.State.self, from: JSONEncoder().encode(zoomed))
+        #expect(restored.zoomed == .files)
+    }
+
     @MainActor
     @Test func quickTerminalRestorableFromV1() throws {
         /* v1

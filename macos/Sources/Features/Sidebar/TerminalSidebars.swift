@@ -45,8 +45,8 @@ enum SidebarEdge: String, Codable {
 /// The sidebars of one terminal window. Every tab is its own window, so each tab opens and
 /// closes its sidebars on its own.
 ///
-/// The sidebars sit outside the split tree. They take no part in split focus, zoom or the
-/// split tree's restoration, and opening one only makes the terminal area narrower.
+/// The sidebars sit outside the split tree. A zoomed panel covers the content area without
+/// changing the split tree or resizing the terminals underneath it.
 final class TerminalSidebars: ObservableObject {
     /// What one sidebar shows and how wide it is. The width is kept while the sidebar is
     /// closed so that it reopens at the same size.
@@ -59,6 +59,8 @@ final class TerminalSidebars: ObservableObject {
     struct State: Codable, Equatable {
         var leading: Side
         var trailing: Side
+        /// Optional so states saved before panel zoom existed still decode.
+        var zoomed: SidebarPanel?
     }
 
     static let minimumWidth: CGFloat = 160
@@ -66,6 +68,7 @@ final class TerminalSidebars: ObservableObject {
 
     @Published private(set) var leading: Side
     @Published private(set) var trailing: Side
+    @Published private(set) var zoomed: SidebarPanel?
 
     /// The directory of the window's focused terminal as its shell last reported it (OSC 7),
     /// or nil if it hasn't reported one. Panels open here.
@@ -87,10 +90,15 @@ final class TerminalSidebars: ObservableObject {
     }
 
     var state: State {
-        get { State(leading: leading, trailing: trailing) }
+        get { State(leading: leading, trailing: trailing, zoomed: zoomed) }
         set {
             leading = Side(panel: newValue.leading.panel, width: Self.clamp(newValue.leading.width))
             trailing = Side(panel: newValue.trailing.panel, width: Self.clamp(newValue.trailing.width))
+            if let panel = newValue.zoomed, isOpen(panel) {
+                if zoomed != panel { zoomed = panel }
+            } else if zoomed != nil {
+                zoomed = nil
+            }
         }
     }
 
@@ -108,6 +116,10 @@ final class TerminalSidebars: ObservableObject {
         }
     }
 
+    func zoomPublisher() -> AnyPublisher<SidebarPanel?, Never> {
+        $zoomed.eraseToAnyPublisher()
+    }
+
     func isOpen(_ panel: SidebarPanel) -> Bool {
         side(panel.edge).panel == panel
     }
@@ -115,8 +127,23 @@ final class TerminalSidebars: ObservableObject {
     /// Shows the panel in its sidebar, replacing whatever that sidebar showed, or closes the
     /// sidebar if it already shows the panel.
     func toggle(_ panel: SidebarPanel) {
-        let newPanel: SidebarPanel? = isOpen(panel) ? nil : panel
-        update(panel.edge) { $0.panel = newPanel }
+        if isOpen(panel) {
+            update(panel.edge) { $0.panel = nil }
+            if zoomed == panel { zoomed = nil }
+        } else {
+            update(panel.edge) { $0.panel = panel }
+            if zoomed != nil { zoomed = nil }
+        }
+    }
+
+    func toggleZoom(_ panel: SidebarPanel) {
+        guard isOpen(panel) else { return }
+        zoomed = zoomed == panel ? nil : panel
+    }
+
+    func restoreZoom() {
+        guard zoomed != nil else { return }
+        zoomed = nil
     }
 
     func setWidth(_ width: CGFloat, for edge: SidebarEdge) {

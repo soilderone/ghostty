@@ -190,7 +190,9 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
 
             if let view = foundView {
                 c.focusedSurface = view
-                restoreFocus(to: view, inWindow: window)
+                if c.sidebars.zoomed == nil {
+                    restoreFocus(to: view, inWindow: window)
+                }
             }
         }
 
@@ -241,4 +243,3 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         }
     }
 }
-

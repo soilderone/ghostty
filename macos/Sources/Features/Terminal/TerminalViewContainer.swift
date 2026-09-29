@@ -122,6 +122,10 @@ class TerminalViewContainer: NSView {
         sidebarsLayout?.setToolRailVisible(visible)
     }
 
+    func focusZoomedSidebarIfNeeded() {
+        sidebarsLayout?.focusZoomedPanelIfNeeded()
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateGlassEffectIfNeeded()

@@ -16,8 +16,8 @@ struct SidebarColumnView: View {
         }
     }
 
-    /// The panel as a card on the window canvas. The terminal side has no gap of its own
-    /// because the terminal cards already keep one from their edge.
+    /// The panel as a card on the window canvas. A zoomed panel has gaps on both sides;
+    /// at normal width the terminal cards provide the gap on its inner edge.
     @ViewBuilder
     private var card: some View {
         let shape = RoundedRectangle(cornerRadius: SplitFrame.cornerRadius, style: .continuous)
@@ -34,7 +34,8 @@ struct SidebarColumnView: View {
             }
         }
         .padding(.vertical, SplitFrame.gap)
-        .padding(edge == .leading ? Edge.Set.leading : Edge.Set.trailing, SplitFrame.gap)
+        .padding(sidebars.zoomed?.edge == edge ? Edge.Set.horizontal :
+                    (edge == .leading ? .leading : .trailing), SplitFrame.gap)
     }
 
     private var flat: some View {
@@ -70,11 +71,18 @@ struct SidebarPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SidebarHeader(panel: panel, directory: sidebars.directory)
+            SidebarHeader(
+                panel: panel,
+                directory: sidebars.directory,
+                isZoomed: sidebars.zoomed == panel,
+                onToggleZoom: { sidebars.toggleZoom(panel) })
 
             switch panel {
             case .git:
-                GitView(model: sidebars.git, directory: sidebars.directory)
+                GitView(
+                    model: sidebars.git,
+                    directory: sidebars.directory,
+                    isCovered: sidebars.zoomed != nil && sidebars.zoomed != .git)
             case .files:
                 FileBrowserView(model: sidebars.files, directory: sidebars.directory)
             }
@@ -86,6 +94,8 @@ struct SidebarPanelView: View {
 struct SidebarHeader: View {
     let panel: SidebarPanel
     let directory: URL?
+    let isZoomed: Bool
+    let onToggleZoom: () -> Void
 
     @ObservedObject private var chromeAccent = ChromeAccent.shared
     @Environment(\.controlActiveState) private var controlActiveState
@@ -105,6 +115,20 @@ struct SidebarHeader: View {
                     .help(directory?.path ?? "")
 
                 Spacer(minLength: 0)
+
+                Button(action: onToggleZoom) {
+                    Image(systemName: isZoomed
+                          ? "arrow.down.right.and.arrow.up.left"
+                          : "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(Color(nsColor: ChromePalette.secondaryText))
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .help(isZoomed ? "Restore \(panel.title)" : "Zoom \(panel.title)")
+                .accessibilityLabel(isZoomed ? "Restore \(panel.title)" : "Zoom \(panel.title)")
             }
             .font(.system(size: 12))
             .padding(.horizontal, 10)

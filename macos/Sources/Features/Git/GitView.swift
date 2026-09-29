@@ -9,8 +9,10 @@ import SwiftUI
 struct GitView: View {
     @ObservedObject var model: GitViewModel
     let directory: URL?
+    let isCovered: Bool
 
     @Environment(\.controlActiveState) private var controlActiveState
+    @State private var hasAppeared = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,13 +25,18 @@ struct GitView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear {
+            hasAppeared = true
             model.setDirectory(directory)
             model.setWindowActive(controlActiveState == .key)
-            model.setVisible(true)
+            model.setVisible(!isCovered)
         }
-        .onDisappear { model.setVisible(false) }
+        .onDisappear {
+            hasAppeared = false
+            model.setVisible(false)
+        }
         .onChange(of: directory) { model.setDirectory($0) }
         .onChange(of: controlActiveState) { model.setWindowActive($0 == .key) }
+        .onChange(of: isCovered) { if hasAppeared { model.setVisible(!$0) } }
     }
 
     @ViewBuilder
