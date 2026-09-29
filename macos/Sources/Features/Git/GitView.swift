@@ -788,7 +788,7 @@ private struct GitMessage: View {
     let symbol: String
     let title: String
     var detail: String?
-    var retry: (() -> Void)? = nil
+    var retry: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 6) {

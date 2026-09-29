@@ -163,26 +163,26 @@ final class RemoteFileBrowserModel: ObservableObject {
         let destination = URL(fileURLWithPath: path).deletingLastPathComponent()
             .appendingPathComponent(name).path
         guard destination != path else { return }
-        mutate({ try await SSHRemoteFiles.move(path, to: destination, on: self.connection) }) {
+        mutate({ try await SSHRemoteFiles.move(path, to: destination, on: self.connection) }, after: {
             self.retarget(from: path, to: destination)
-        }
+        })
     }
 
     func move(_ path: String, into directory: String) {
         let destination = URL(fileURLWithPath: directory, isDirectory: true)
             .appendingPathComponent(URL(fileURLWithPath: path).lastPathComponent).path
         guard destination != path else { return }
-        mutate({ try await SSHRemoteFiles.move(path, to: destination, on: self.connection) }) {
+        mutate({ try await SSHRemoteFiles.move(path, to: destination, on: self.connection) }, after: {
             self.retarget(from: path, to: destination)
-        }
+        })
     }
 
     func trash(_ path: String) {
-        mutate({ try await SSHRemoteFiles.trash(path, on: self.connection) }) {
+        mutate({ try await SSHRemoteFiles.trash(path, on: self.connection) }, after: {
             for tab in self.tabs where tab == path || tab.hasPrefix(path + "/") {
                 self.close(tab)
             }
-        }
+        })
     }
 
     private func pathForNewItem(_ name: String) -> String? {

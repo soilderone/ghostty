@@ -10,7 +10,7 @@ extension Ghostty {
     class SurfaceView: OSSurfaceView, Codable, Identifiable {
         /// A connection started from the SSH picker. An ordinary shell that runs ssh itself
         /// stays local here, since the app cannot safely infer its destination or directory.
-        @Published private(set) var sshConnection: SSHConnection? = nil
+        @Published private(set) var sshConnection: SSHConnection?
 
         // The current title of the surface as defined by the pty. This can be
         // changed with escape codes.
