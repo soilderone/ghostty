@@ -65,6 +65,72 @@ final class FileQuickOpenIndex: ObservableObject {
         showsHidden: Bool,
         cancellation: Cancellation
     ) -> (entries: [Entry], truncated: Bool) {
+        listRepository(root, showsHidden: showsHidden, cancellation: cancellation) ??
+            walk(root, showsHidden: showsHidden, cancellation: cancellation)
+    }
+
+    /// The files of a git repository, from git: the ones it tracks and the ones it doesn't but
+    /// wouldn't ignore. That takes a fraction of a walk of the folder, and leaves out what
+    /// `.gitignore` says is not the user's own (build output, virtual environments, ...) so the
+    /// limit isn't spent on it.
+    ///
+    /// Nil when the folder is not in a repository, git isn't there, or it lists nothing (a folder
+    /// that is itself ignored), and then the folder is walked.
+    private static func listRepository(
+        _ root: URL,
+        showsHidden: Bool,
+        cancellation: Cancellation
+    ) -> (entries: [Entry], truncated: Bool)? {
+        guard let git = GitRunner.executable,
+              let output = try? GitRunner.runBlocking(
+                executable: git,
+                arguments: ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+                directory: root.path,
+                maxBytes: 16 * 1024 * 1024,
+                successCodes: [0])
+        else { return nil }
+
+        let base = root.path.hasSuffix("/") ? root.path : root.path + "/"
+        var entries: [Entry] = []
+        var previous = ""
+        var truncated = output.truncated
+        for (index, raw) in output.data.split(separator: 0, omittingEmptySubsequences: true).enumerated() {
+            if index % 512 == 0 && cancellation.isCancelled { return ([], false) }
+
+            // Files are listed once per merge stage while a merge is unresolved.
+            let path = String(decoding: raw, as: UTF8.self)
+            if path == previous { continue }
+            previous = path
+
+            let components = path.split(separator: "/")
+            if !showsHidden && components.contains(where: { $0.hasPrefix(".") }) { continue }
+            if components.contains(where: { skippedFolders.contains(String($0)) }) { continue }
+
+            // A tracked file can be missing from the disk, and a submodule is a folder.
+            var info = stat()
+            guard lstat(base + path, &info) == 0, info.st_mode & S_IFMT != S_IFDIR else { continue }
+
+            entries.append(Self.entry(path))
+            if entries.count >= maxFiles {
+                truncated = true
+                break
+            }
+        }
+        return entries.isEmpty ? nil : (entries, truncated)
+    }
+
+    private static func entry(_ path: String) -> Entry {
+        let bytes = Array(path.lowercased().utf8)
+        let nameStart = (bytes.lastIndex(of: UInt8(ascii: "/")) ?? -1) + 1
+        return Entry(path: path, bytes: bytes, nameStart: nameStart)
+    }
+
+    /// The files under a folder, found by walking it.
+    private static func walk(
+        _ root: URL,
+        showsHidden: Bool,
+        cancellation: Cancellation
+    ) -> (entries: [Entry], truncated: Bool) {
         var options: FileManager.DirectoryEnumerationOptions = [.skipsPackageDescendants]
         if !showsHidden { options.insert(.skipsHiddenFiles) }
         guard let enumerator = FileManager.default.enumerator(
@@ -87,9 +153,7 @@ final class FileQuickOpenIndex: ObservableObject {
             }
 
             let path = url.path.hasPrefix(prefix) ? String(url.path.dropFirst(prefix.count)) : url.path
-            let bytes = Array(path.lowercased().utf8)
-            let nameStart = (bytes.lastIndex(of: UInt8(ascii: "/")) ?? -1) + 1
-            entries.append(Entry(path: path, bytes: bytes, nameStart: nameStart))
+            entries.append(Self.entry(path))
             if entries.count >= maxFiles { return (entries, true) }
         }
         return (entries, false)

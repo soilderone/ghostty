@@ -103,7 +103,8 @@ enum GitRunner {
         }
     }
 
-    private static func runBlocking(
+    /// Runs git and waits for it. Call this from a background thread.
+    static func runBlocking(
         executable: String,
         arguments: [String],
         directory: String,

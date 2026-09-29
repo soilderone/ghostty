@@ -50,7 +50,7 @@ final class FilePreviewLoader: ObservableObject {
         }
 
         if FilePreviewDocument.imageExtensions.contains(url.pathExtension.lowercased()),
-           let image = NSImage(contentsOf: url) {
+           let image = FilePreviewImage.load(contentsOf: url) {
             return .image(image)
         }
 
