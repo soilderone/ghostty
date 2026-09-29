@@ -28,9 +28,20 @@ struct FilePreviewDocument: Equatable {
 /// the page.
 struct FilePreviewWebView: NSViewRepresentable {
     let document: FilePreviewDocument
+    let allowLocalFiles: Bool
 
     /// Called for links to local files.
     let onOpenFile: (URL) -> Void
+
+    init(
+        document: FilePreviewDocument,
+        allowLocalFiles: Bool = true,
+        onOpenFile: @escaping (URL) -> Void
+    ) {
+        self.document = document
+        self.allowLocalFiles = allowLocalFiles
+        self.onOpenFile = onOpenFile
+    }
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -54,8 +65,10 @@ struct FilePreviewWebView: NSViewRepresentable {
         context.coordinator.webView = webView
 
         if let page = Self.pageURL {
-            // Read access to everything so images next to a markdown file load.
-            webView.loadFileURL(page, allowingReadAccessTo: URL(fileURLWithPath: "/"))
+            // Local previews can load images next to the file. Remote previews must not read
+            // arbitrary local files referenced by remote Markdown.
+            let readAccess = allowLocalFiles ? URL(fileURLWithPath: "/") : page.deletingLastPathComponent()
+            webView.loadFileURL(page, allowingReadAccessTo: readAccess)
         }
         return webView
     }

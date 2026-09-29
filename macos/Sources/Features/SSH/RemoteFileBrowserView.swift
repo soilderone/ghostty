@@ -306,7 +306,7 @@ struct RemoteFileBrowserView: View {
             ProgressView().controlSize(.small)
         case .document(let document):
             if FilePreviewWebView.pageURL != nil {
-                FilePreviewWebView(document: document) { link in
+                FilePreviewWebView(document: document, allowLocalFiles: false) { link in
                     guard link.scheme == "ssh" else { return }
                     Task { @MainActor in await openRemotePath(link.path) }
                 }
