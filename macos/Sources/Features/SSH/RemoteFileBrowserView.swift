@@ -140,7 +140,7 @@ struct RemoteFileBrowserView: View {
                         guard let path = sidebars.remoteDirectory else { return }
                         sidebars.navigateRemote(to: URL(fileURLWithPath: path).deletingLastPathComponent().path)
                     } label: {
-                        fileRow(symbol: "arrow.turn.up.left", name: "..", subtitle: nil, selected: false)
+                        fileRow(name: "..", entry: nil, subtitle: nil, selected: false)
                     }
                     .buttonStyle(.plain)
                 }
@@ -155,8 +155,8 @@ struct RemoteFileBrowserView: View {
                         }
                     } label: {
                         fileRow(
-                            symbol: entry.isDirectory ? "folder" : "doc",
                             name: entry.name,
+                            entry: entry,
                             subtitle: entry.isDirectory ? nil : ByteCountFormatter.string(
                                 fromByteCount: entry.size, countStyle: .file),
                             selected: model.activeTab == entry.url.path)
@@ -169,12 +169,17 @@ struct RemoteFileBrowserView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func fileRow(symbol: String, name: String, subtitle: String?, selected: Bool) -> some View {
+    private func fileRow(name: String, entry: FileEntry?, subtitle: String?, selected: Bool) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: symbol)
-                .font(.system(size: 12))
-                .foregroundColor(Color(nsColor: ChromePalette.filesAccent))
-                .frame(width: 18)
+            if let entry {
+                FileIcon(name: entry.name, isDirectory: entry.isDirectory, isSymbolicLink: entry.isSymbolicLink)
+                    .opacity(entry.isHidden ? 0.55 : 1)
+            } else {
+                Image(systemName: "arrow.turn.up.left")
+                    .font(.system(size: 12))
+                    .foregroundColor(Color(nsColor: ChromePalette.secondaryText))
+                    .frame(width: 16, height: 16)
+            }
             Text(name)
                 .font(.system(size: 12))
                 .foregroundColor(Color(nsColor: ChromePalette.text))
@@ -250,6 +255,7 @@ struct RemoteFileBrowserView: View {
                 HStack(spacing: 2) {
                     ForEach(model.tabs, id: \.self) { path in
                         HStack(spacing: 2) {
+                            FileIcon(name: URL(fileURLWithPath: path).lastPathComponent)
                             Button(URL(fileURLWithPath: path).lastPathComponent) {
                                 model.activeTab = path
                                 model.showsPreview = true

@@ -94,6 +94,7 @@ enum ChromePalette {
     static let filesAccent = dynamic(dark: 0xD6A85F, light: 0x9C6B2F)
     static let gitAccent = dynamic(dark: 0xE3906F, light: 0xB0583A)
     static let aiAccent = dynamic(dark: 0xB3A0E6, light: 0x6F5FA6)
+    static let fileMediaAccent = dynamic(dark: 0x85AACB, light: 0x3F6F93)
 
     /// The colors of the lanes in the Git view's commit graph, taken from the Sage terminal
     /// palette so the graph matches the terminals next to it.

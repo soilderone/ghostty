@@ -497,20 +497,24 @@ extension FileTreeView.Coordinator {
     }
 }
 
-/// A row: the file's icon, colored by type as the Finder draws it, and its name. Dotfiles are
-/// dimmed.
+/// A row with an outline icon in the panel's palette. Dotfiles are dimmed.
 final class FileCellView: NSTableCellView {
     private let icon = NSImageView()
+    private let aliasIcon = NSImageView()
     private let label = NSTextField(labelWithString: "")
 
     init() {
         super.init(frame: .zero)
         icon.translatesAutoresizingMaskIntoConstraints = false
         icon.imageScaling = .scaleProportionallyUpOrDown
+        aliasIcon.translatesAutoresizingMaskIntoConstraints = false
+        aliasIcon.image = NSImage(systemSymbolName: "arrow.turn.up.right", accessibilityDescription: nil)
+        aliasIcon.contentTintColor = ChromePalette.secondaryText
         label.translatesAutoresizingMaskIntoConstraints = false
         label.lineBreakMode = .byTruncatingMiddle
         label.font = .systemFont(ofSize: 12)
         addSubview(icon)
+        addSubview(aliasIcon)
         addSubview(label)
         imageView = icon
         textField = label
@@ -519,6 +523,10 @@ final class FileCellView: NSTableCellView {
             icon.centerYAnchor.constraint(equalTo: centerYAnchor),
             icon.widthAnchor.constraint(equalToConstant: 16),
             icon.heightAnchor.constraint(equalToConstant: 16),
+            aliasIcon.trailingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 2),
+            aliasIcon.bottomAnchor.constraint(equalTo: icon.bottomAnchor),
+            aliasIcon.widthAnchor.constraint(equalToConstant: 8),
+            aliasIcon.heightAnchor.constraint(equalToConstant: 8),
             label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 6),
             label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -4),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -531,6 +539,7 @@ final class FileCellView: NSTableCellView {
     }
 
     func configure(_ node: FileNode) {
+        aliasIcon.isHidden = node.isParentLink || !node.entry.isSymbolicLink
         if node.isParentLink {
             icon.image = NSImage(systemSymbolName: "arrow.turn.left.up", accessibilityDescription: "Up")
             icon.contentTintColor = ChromePalette.secondaryText
@@ -540,8 +549,9 @@ final class FileCellView: NSTableCellView {
             return
         }
 
-        icon.image = NSWorkspace.shared.icon(forFile: node.entry.url.path)
-        icon.contentTintColor = nil
+        let style = FileIconStyle(name: node.entry.name, isDirectory: node.entry.isDirectory)
+        icon.image = style.image
+        icon.contentTintColor = node.entry.isHidden ? style.color.withAlphaComponent(0.55) : style.color
         label.stringValue = node.entry.name
         label.textColor = node.entry.isHidden ? ChromePalette.tertiaryText : ChromePalette.text
         toolTip = node.entry.url.path

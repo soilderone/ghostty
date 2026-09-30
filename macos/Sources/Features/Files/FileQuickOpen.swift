@@ -302,7 +302,7 @@ struct FileQuickOpenView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(results.enumerated()), id: \.offset) { offset, entry in
-                        FileQuickOpenRow(entry: entry, root: model.root, isHighlighted: offset == highlighted)
+                        FileQuickOpenRow(entry: entry, isHighlighted: offset == highlighted)
                             .id(offset)
                             .onTapGesture { open(entry) }
                     }
@@ -351,7 +351,6 @@ struct FileQuickOpenView: View {
 
 private struct FileQuickOpenRow: View {
     let entry: FileQuickOpenIndex.Entry
-    let root: URL?
     let isHighlighted: Bool
 
     private var name: String {
@@ -364,9 +363,7 @@ private struct FileQuickOpenRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: root?.appendingPathComponent(entry.path).path ?? entry.path))
-                .resizable()
-                .frame(width: 14, height: 14)
+            FileIcon(name: name)
             Text(name)
                 .font(.system(size: 12))
                 .foregroundColor(Color(nsColor: ChromePalette.text))

@@ -466,9 +466,7 @@ private struct FileTab: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
-                .resizable()
-                .frame(width: 14, height: 14)
+            FileIcon(name: url.lastPathComponent)
             Text(url.lastPathComponent)
                 .font(.system(size: 11.5, weight: isActive ? .medium : .regular))
                 .foregroundColor(Color(nsColor: isActive ? ChromePalette.text : ChromePalette.secondaryText))
