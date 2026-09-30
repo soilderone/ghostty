@@ -53,7 +53,7 @@ final class GitLogStream: @unchecked Sendable {
             finished.wait()
             lock.lock()
             defer { lock.unlock() }
-            return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            return data.lossyUTF8String.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 
@@ -182,7 +182,7 @@ final class GitLogStream: @unchecked Sendable {
 
         let taken = min(count, recordEnds.count)
         let cut = taken == 0 ? 0 : recordEnds[taken - 1] + 1
-        let text = String(decoding: buffer.prefix(cut), as: UTF8.self)
+        let text = buffer.prefix(cut).lossyUTF8String
         let hasMore = recordEnds.count > taken
 
         // Keep what was read past the page for the next one.

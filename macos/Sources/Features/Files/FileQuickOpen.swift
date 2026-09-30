@@ -98,7 +98,7 @@ final class FileQuickOpenIndex: ObservableObject {
             if index % 512 == 0 && cancellation.isCancelled { return ([], false) }
 
             // Files are listed once per merge stage while a merge is unresolved.
-            let path = String(decoding: raw, as: UTF8.self)
+            let path = raw.lossyUTF8String
             if path == previous { continue }
             previous = path
 
