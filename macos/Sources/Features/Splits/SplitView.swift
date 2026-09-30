@@ -63,6 +63,7 @@ struct SplitView<L: View, R: View>: View {
                         onEqualize()
                     }
             }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(splitViewLabel)
         }
@@ -108,13 +109,11 @@ struct SplitView<L: View, R: View>: View {
         var result = CGRect(x: 0, y: 0, width: size.width, height: size.height)
         switch direction {
         case .horizontal:
-            result.size.width *= split
-            result.size.width -= splitterVisibleSize / 2
+            result.size.width = max(0, size.width * split - splitterVisibleSize / 2)
             result.size.width -= result.size.width.truncatingRemainder(dividingBy: self.resizeIncrements.width)
 
         case .vertical:
-            result.size.height *= split
-            result.size.height -= splitterVisibleSize / 2
+            result.size.height = max(0, size.height * split - splitterVisibleSize / 2)
             result.size.height -= result.size.height.truncatingRemainder(dividingBy: self.resizeIncrements.height)
         }
 
@@ -131,12 +130,12 @@ struct SplitView<L: View, R: View>: View {
             // and make the width fit the remaining space.
             result.origin.x += leftRect.size.width
             result.origin.x += splitterVisibleSize / 2
-            result.size.width -= result.origin.x
+            result.size.width = max(0, size.width - result.origin.x)
 
         case .vertical:
             result.origin.y += leftRect.size.height
             result.origin.y += splitterVisibleSize / 2
-            result.size.height -= result.origin.y
+            result.size.height = max(0, size.height - result.origin.y)
         }
 
         return result

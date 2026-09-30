@@ -108,33 +108,37 @@ struct SplitCard<Content: View>: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: SplitFrame.cornerRadius, style: .continuous)
 
-        ZStack(alignment: .top) {
-            SplitCardBackground(
-                headerColor: Color(nsColor: ChromePalette.header(over: terminalBackground)),
-                headerTint: isFocused ? accent.opacity(0.07) : .clear,
-                marginColor: Color(nsColor: terminalBackground))
-                .contentShape(shape)
-                .onTapGesture { Ghostty.moveFocus(to: surfaceView) }
-
-            content
-                .padding(EdgeInsets(
-                    top: SplitFrame.headerHeight,
-                    leading: SplitFrame.margin,
-                    bottom: SplitFrame.margin,
-                    trailing: SplitFrame.margin))
-
-            SplitHeader(
-                surfaceView: surfaceView,
-                info: info,
-                isFocused: isFocused,
-                accent: accent,
-                showsControls: isHovered || isFocused)
-                .frame(height: SplitFrame.headerHeight)
-
-            border(shape)
-                .allowsHitTesting(false)
-        }
-        .onHover { isHovered = $0 }
+        content
+            .padding(EdgeInsets(
+                top: SplitFrame.headerHeight,
+                leading: SplitFrame.margin,
+                bottom: SplitFrame.margin,
+                trailing: SplitFrame.margin))
+            .background {
+                SplitCardBackground(
+                    headerColor: Color(nsColor: ChromePalette.header(over: terminalBackground)),
+                    headerTint: isFocused ? accent.opacity(0.07) : .clear,
+                    marginColor: Color(nsColor: terminalBackground))
+                    .contentShape(shape)
+                    .onTapGesture { Ghostty.moveFocus(to: surfaceView) }
+            }
+            // A header's buttons have a minimum width. As an overlay they cannot widen
+            // a narrow terminal's card and make it overlap the neighboring split.
+            .overlay(alignment: .top) {
+                SplitHeader(
+                    surfaceView: surfaceView,
+                    info: info,
+                    isFocused: isFocused,
+                    accent: accent,
+                    showsControls: isHovered || isFocused)
+                    .frame(height: SplitFrame.headerHeight)
+                    .clipped()
+            }
+            .overlay {
+                border(shape)
+                    .allowsHitTesting(false)
+            }
+            .onHover { isHovered = $0 }
     }
 
     /// A hairline at rest; the focused card's border takes 60% of the accent, as in Wave.
@@ -226,62 +230,68 @@ private struct SplitHeader: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            Group {
-                Image(systemName: info.value.sshConnection == nil ? "terminal" :
-                      (info.value.isDisconnected ? "network.slash" : "network"))
-                    .font(.system(size: 11))
-                    .foregroundColor(isFocused ? accent : Color(nsColor: ChromePalette.tertiaryText))
+        GeometryReader { geometry in
+            HStack(spacing: 8) {
+                Group {
+                    if geometry.size.width >= 100 {
+                        Image(systemName: info.value.sshConnection == nil ? "terminal" :
+                              (info.value.isDisconnected ? "network.slash" : "network"))
+                            .font(.system(size: 11))
+                            .foregroundColor(isFocused ? accent : Color(nsColor: ChromePalette.tertiaryText))
+                    }
 
-                // Truncate the head so the current directory stays visible.
-                Text(info.value.sshConnection.map {
-                    "SSH \($0.displayName)" + (info.value.isDisconnected ? " · Disconnected" : "")
-                } ??
-                     (directory?.abbreviatedPath ?? info.value.title))
-                    .font(directory == nil ? Font.system(size: 12) : Font.system(size: 11.5, design: .monospaced))
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                    .foregroundColor(Color(nsColor: ChromePalette.text).opacity(0.75))
+                    // Truncate the head so the current directory stays visible.
+                    if geometry.size.width >= 140 {
+                        Text(info.value.sshConnection.map {
+                            "SSH \($0.displayName)" + (info.value.isDisconnected ? " · Disconnected" : "")
+                        } ??
+                             (directory?.abbreviatedPath ?? info.value.title))
+                            .font(directory == nil ? Font.system(size: 12) : Font.system(size: 11.5, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                            .foregroundColor(Color(nsColor: ChromePalette.text).opacity(0.75))
+                    }
+                }
+                // Clicks go through to the drag source behind.
+                .allowsHitTesting(false)
+
+                // Something happened here while it wasn't focused.
+                if geometry.size.width >= 140, let badge = info.value.badge {
+                    TerminalBadgeIcon(badge: badge, size: 11)
+                }
+
+                Spacer(minLength: 0)
+
+                controls(availableWidth: geometry.size.width)
             }
-            // Clicks go through to the drag source behind.
-            .allowsHitTesting(false)
-
-            // Something happened here while it wasn't focused.
-            if let badge = info.value.badge {
-                TerminalBadgeIcon(badge: badge, size: 11)
+            .padding(.leading, geometry.size.width >= 140 ? 12 : 4)
+            .padding(.trailing, 4)
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .background {
+                // This replaces the drag handle at the top of the terminal. A click without a
+                // drag focuses the terminal.
+                Ghostty.SurfaceDragSource(
+                    surfaceView: surfaceView,
+                    isDragging: $isDragging,
+                    isHovering: $isHoveringDragSource)
             }
-
-            Spacer(minLength: 0)
-
-            controls
-        }
-        .padding(.leading, 12)
-        .padding(.trailing, 4)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background {
-            // This replaces the drag handle at the top of the terminal. A click without a
-            // drag focuses the terminal.
-            Ghostty.SurfaceDragSource(
-                surfaceView: surfaceView,
-                isDragging: $isDragging,
-                isHovering: $isHoveringDragSource)
-        }
-        .overlay(alignment: .bottom) {
-            if isScrolled {
-                Rectangle()
-                    .fill(Color(nsColor: ChromePalette.strongSeparator))
-                    .frame(height: 0.5)
-                    .allowsHitTesting(false)
+            .overlay(alignment: .bottom) {
+                if isScrolled {
+                    Rectangle()
+                        .fill(Color(nsColor: ChromePalette.strongSeparator))
+                        .frame(height: 0.5)
+                        .allowsHitTesting(false)
+                }
             }
-        }
-        .help(directory ?? info.value.title)
-        .onAppear {
-            isScrolled = (surfaceView.scrollbar?.offset ?? 0) > 0
-        }
-        .onReceive(scrollbarOffsets) { offset in
-            let scrolled = offset > 0
-            guard scrolled != isScrolled else { return }
-            isScrolled = scrolled
+            .help(directory ?? info.value.title)
+            .onAppear {
+                isScrolled = (surfaceView.scrollbar?.offset ?? 0) > 0
+            }
+            .onReceive(scrollbarOffsets) { offset in
+                let scrolled = offset > 0
+                guard scrolled != isScrolled else { return }
+                isScrolled = scrolled
+            }
         }
     }
 
@@ -293,35 +303,39 @@ private struct SplitHeader: View {
             .eraseToAnyPublisher()
     }
 
-    private var controls: some View {
+    private func controls(availableWidth: CGFloat) -> some View {
         HStack(spacing: 2) {
-            if info.value.sshConnection != nil && info.value.isDisconnected {
+            if availableWidth >= 180, info.value.sshConnection != nil && info.value.isDisconnected {
                 SplitHeaderButton(symbol: "arrow.clockwise", help: "Reconnect SSH") {
                     (surfaceView.window?.windowController as? TerminalController)?
                         .reconnectSSH(on: surfaceView)
                 }
             }
 
-            SplitHeaderButton(symbol: "network", help: "Connect SSH") {
-                showsSSHConnectionPicker = true
-            }
-            .popover(isPresented: $showsSSHConnectionPicker) {
-                SSHConnectionPicker(onConnect: { connection in
-                    showsSSHConnectionPicker = false
-                    (surfaceView.window?.windowController as? TerminalController)?
-                        .connectSSH(connection, from: surfaceView)
-                }, onDismiss: {
-                    showsSSHConnectionPicker = false
-                })
+            if availableWidth >= 160 {
+                SplitHeaderButton(symbol: "network", help: "Connect SSH") {
+                    showsSSHConnectionPicker = true
+                }
+                .popover(isPresented: $showsSSHConnectionPicker) {
+                    SSHConnectionPicker(onConnect: { connection in
+                        showsSSHConnectionPicker = false
+                        (surfaceView.window?.windowController as? TerminalController)?
+                            .connectSSH(connection, from: surfaceView)
+                    }, onDismiss: {
+                        showsSSHConnectionPicker = false
+                    })
+                }
             }
 
-            SplitHeaderButton(
-                symbol: tree.isZoomed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                help: tree.isZoomed ? "Restore Split" : "Zoom Split",
-                isEnabled: tree.isSplit
-            ) {
-                guard let surface = surfaceView.surface else { return }
-                ghostty.splitToggleZoom(surface: surface)
+            if availableWidth >= 64 {
+                SplitHeaderButton(
+                    symbol: tree.isZoomed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                    help: tree.isZoomed ? "Restore Split" : "Zoom Split",
+                    isEnabled: tree.isSplit
+                ) {
+                    guard let surface = surfaceView.surface else { return }
+                    ghostty.splitToggleZoom(surface: surface)
+                }
             }
 
             SplitHeaderButton(symbol: "xmark", help: "Close Terminal", isDestructive: true) {
