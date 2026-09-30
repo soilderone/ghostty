@@ -45,7 +45,7 @@ enum SidebarEdge: String, Codable {
 /// The sidebars of one terminal window. Every tab is its own window, so each tab opens and
 /// closes its sidebars on its own.
 ///
-/// The sidebars sit outside the split tree. A zoomed panel covers the content area without
+/// The sidebars sit outside the split tree. A zoomed panel floats over the content area without
 /// changing the split tree or resizing the terminals underneath it.
 final class TerminalSidebars: ObservableObject {
     /// What one sidebar shows and how wide it is. The width is kept while the sidebar is

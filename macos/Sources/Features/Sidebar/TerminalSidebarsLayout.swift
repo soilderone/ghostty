@@ -5,7 +5,7 @@ import SwiftUI
 
 /// Places a terminal window's sidebars and tool rail beside its terminal view inside the
 /// window's ``TerminalViewContainer``, from left to right: leading sidebar, terminal, trailing
-/// sidebar, tool rail. Opening a sidebar narrows the terminal area; zooming a panel moves its
+/// sidebar, tool rail. Opening a sidebar narrows the terminal area; zooming a panel floats its
 /// hosting view over the content area, leaving the terminal's layout and PTY size unchanged.
 final class TerminalSidebarsLayout {
     /// The narrowest the terminal area gets before the sidebars start to shrink instead.
@@ -104,8 +104,16 @@ final class TerminalSidebarsLayout {
             terminalMinimumWidth,
         ])
 
+        overlay.onRestore = { [weak sidebars] in sidebars?.restoreZoom() }
         zoomCancellable = sidebars.zoomPublisher()
-            .sink { [weak self] in self?.applyZoom($0) }
+            .sink { [weak self] panel in
+                // @Published sends before storing the new value. Layout and snapshot the
+                // panel only after SwiftUI can read its new zoom state.
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.sidebars.zoomed == panel else { return }
+                    self.applyZoom(panel)
+                }
+            }
     }
 
     /// Shows or hides the tool rail (`macos-tool-rail`).
@@ -135,7 +143,7 @@ final class TerminalSidebarsLayout {
     private func sourceFrame(for panel: SidebarPanel) -> NSRect {
         container.layoutSubtreeIfNeeded()
         let column = column(for: panel)
-        return column.convert(column.bounds, to: container)
+        return column.convert(column.bounds, to: zoomOverlay)
     }
 
     private var shouldAnimateZoom: Bool {
@@ -144,109 +152,50 @@ final class TerminalSidebarsLayout {
             container.bounds.width > 0
     }
 
-    /// Match the terminal zoom: lay out content once at its destination size and animate the
-    /// composited layer. Resizing the hosting view every frame makes Files and Git reflow.
-    private func sourceTransform(for panel: SidebarPanel) -> CATransform3D? {
-        let source = sourceFrame(for: panel)
-        let destination = zoomOverlay.frame
-        guard source.width > 0, source.height > 0,
-              destination.width > 0, destination.height > 0 else { return nil }
-
-        let scaleX = source.width / destination.width
-        let scaleY = source.height / destination.height
-        let anchor = zoomOverlay.layer?.anchorPoint ?? CGPoint(x: 0.5, y: 0.5)
-
-        return CATransform3DMakeAffineTransform(CGAffineTransform(
-            a: scaleX,
-            b: 0,
-            c: 0,
-            d: scaleY,
-            tx: source.minX - destination.minX - (1 - scaleX) * destination.width * anchor.x,
-            ty: source.minY - destination.minY - (1 - scaleY) * destination.height * anchor.y))
-    }
-
-    private func setOverlayTransform(_ transform: CATransform3D) {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        zoomOverlay.layer?.transform = transform
-        CATransaction.commit()
-    }
-
-    private func animateOverlay(
-        from start: CATransform3D,
-        to end: CATransform3D,
-        completion: (() -> Void)? = nil
-    ) {
-        guard let layer = zoomOverlay.layer else {
-            completion?()
-            return
-        }
-        guard shouldAnimateZoom else {
-            setOverlayTransform(end)
-            completion?()
-            return
-        }
-
-        let spring = CASpringAnimation(keyPath: "transform")
-        spring.fromValue = NSValue(caTransform3D: start)
-        spring.toValue = NSValue(caTransform3D: end)
-        // Match TerminalSplitTreeView's 0.38 s response and 0.9 damping fraction.
-        let angularFrequency = 2 * CGFloat.pi / 0.38
-        spring.mass = 1
-        spring.stiffness = angularFrequency * angularFrequency
-        spring.damping = 2 * 0.9 * angularFrequency
-        spring.initialVelocity = 0
-        spring.duration = spring.settlingDuration
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        CATransaction.setCompletionBlock(completion)
-        layer.transform = end
-        layer.add(spring, forKey: "sidebarZoom")
-        CATransaction.commit()
-    }
-
     private func applyZoom(_ panel: SidebarPanel?) {
         guard desiredPanel != panel else { return }
         desiredPanel = panel
         zoomGeneration += 1
         let generation = zoomGeneration
-        let currentTransform = zoomOverlay.layer?.presentation()?.transform ??
-            zoomOverlay.layer?.transform ?? CATransform3DIdentity
-        zoomOverlay.layer?.removeAnimation(forKey: "sidebarZoom")
+        let currentFrame = zoomOverlay.stopAnimation()
+        leading.setContentVisible(true)
+        trailing.setContentVisible(true)
 
         if let presentedPanel, let panel, presentedPanel != panel {
             column(for: presentedPanel).restoreContent()
             self.presentedPanel = nil
-            zoomOverlay.isHidden = true
-            setOverlayTransform(CATransform3DIdentity)
         }
 
         guard let panel else {
             guard let presentedPanel else { return }
-            let source = sourceTransform(for: presentedPanel) ?? CATransform3DIdentity
-            let wasClosed = !sidebars.isOpen(presentedPanel)
-            if wasClosed {
-                finishRestore(presentedPanel, generation: generation)
-            } else {
-                animateOverlay(from: currentTransform, to: source) { [weak self] in
+            let column = column(for: presentedPanel)
+            let start = currentFrame ?? zoomOverlay.contentView.frame
+            let image = shouldAnimateZoom && sidebars.isOpen(presentedPanel) ? zoomOverlay.snapshot() : nil
+            let destination = sourceFrame(for: presentedPanel)
+
+            // Reparent and lay out the real content at sidebar width before animating.
+            // Only a disposable snapshot is scaled; AppKit and SwiftUI never inherit a
+            // transformed ancestor when the hosting view is moved back into its column.
+            column.restoreContent()
+            container.layoutSubtreeIfNeeded()
+            if sidebars.isOpen(presentedPanel), let image {
+                column.setContentVisible(false)
+                zoomOverlay.animateSnapshot(image, from: start, to: destination) { [weak self] in
                     self?.finishRestore(presentedPanel, generation: generation)
                 }
+            } else {
+                finishRestore(presentedPanel, generation: generation)
             }
             return
         }
 
         let column = column(for: panel)
-        var start = currentTransform
-        if presentedPanel == nil {
-            container.layoutSubtreeIfNeeded()
-            start = sourceTransform(for: panel) ?? CATransform3DIdentity
-            column.moveContent(to: zoomOverlay)
-            setOverlayTransform(start)
-            zoomOverlay.isHidden = false
-            presentedPanel = panel
-            container.layoutSubtreeIfNeeded()
-        }
+        let start = currentFrame ?? sourceFrame(for: panel)
+        column.moveContent(to: zoomOverlay.contentView)
+        zoomOverlay.isHidden = false
+        presentedPanel = panel
+        container.layoutSubtreeIfNeeded()
+        zoomOverlay.layoutSubtreeIfNeeded()
 
         if let window = container.window {
             if let responder = window.firstResponder as? NSView {
@@ -257,28 +206,50 @@ final class TerminalSidebarsLayout {
                 window.makeFirstResponder(zoomOverlay)
             }
         }
-        animateOverlay(from: start, to: CATransform3DIdentity)
+
+        if shouldAnimateZoom, let image = zoomOverlay.snapshot() {
+            zoomOverlay.contentView.isHidden = true
+            zoomOverlay.animateSnapshot(image, from: start, to: zoomOverlay.contentView.frame) { [weak self] in
+                guard let self, self.zoomGeneration == generation, self.desiredPanel == panel else { return }
+                self.zoomOverlay.stopAnimation()
+            }
+        }
     }
 
     private func finishRestore(_ panel: SidebarPanel, generation: Int) {
         guard zoomGeneration == generation, desiredPanel == nil, presentedPanel == panel else { return }
         let shouldReturnFocus = container.window?.firstResponder === zoomOverlay || !sidebars.isOpen(panel)
-        column(for: panel).restoreContent()
+        let column = column(for: panel)
+        column.restoreContent()
+        column.setContentVisible(true)
         presentedPanel = nil
+        zoomOverlay.stopAnimation()
         zoomOverlay.isHidden = true
-        zoomOverlay.layer?.removeAnimation(forKey: "sidebarZoom")
-        setOverlayTransform(CATransform3DIdentity)
         container.layoutSubtreeIfNeeded()
         if shouldReturnFocus { returnFocus() }
     }
 }
 
-/// Opaque canvas behind the expanded panel. Its content is the panel's original hosting view.
+/// A centered panel over a translucent scrim. The live hosting view is never transformed;
+/// zoom animations resize a separate snapshot layer that is discarded when they finish.
 private final class SidebarZoomOverlay: NSView {
+    let contentView = NSView()
+    var onRestore: (() -> Void)?
+    private let snapshotLayer = CALayer()
+    private var animationGeneration = 0
+    private var animationCompletion: (() -> Void)?
+    private var animationSize: NSSize?
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.masksToBounds = true
+        contentView.wantsLayer = true
+        addSubview(contentView)
+        contentView.layer?.shadowColor = NSColor.black.cgColor
+        contentView.layer?.shadowOpacity = 0.35
+        contentView.layer?.shadowRadius = 16
+        contentView.layer?.shadowOffset = CGSize(width: 0, height: -6)
+        snapshotLayer.zPosition = 1
     }
 
     @available(*, unavailable)
@@ -286,17 +257,111 @@ private final class SidebarZoomOverlay: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override var isOpaque: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override func layout() {
+        super.layout()
+        contentView.frame = SplitFrame.zoomedLeafFrame(in: bounds.size)
+        contentView.layer?.shadowPath = CGPath(
+            roundedRect: contentView.bounds.insetBy(dx: SplitFrame.gap, dy: SplitFrame.gap),
+            cornerWidth: SplitFrame.cornerRadius,
+            cornerHeight: SplitFrame.cornerRadius,
+            transform: nil)
+
+        // A window resize invalidates the snapshot's destination. Show the correctly
+        // resized live view (or finish restoring it) instead of stretching a stale image.
+        if let animationSize, animationSize != bounds.size {
+            let completion = animationCompletion
+            stopAnimation()
+            // Restoring reparents content and lays out the container. Do that after this
+            // layout pass to avoid recursively entering AppKit's layout engine.
+            DispatchQueue.main.async { completion?() }
+        }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
-        ChromePalette.canvas.setFill()
+        ChromePalette.canvas.withAlphaComponent(SplitFrame.zoomedScrimOpacity).setFill()
         NSBezierPath(rect: dirtyRect).fill()
     }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         needsDisplay = true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onRestore?()
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        onRestore?()
+    }
+
+    func snapshot() -> CGImage? {
+        contentView.layoutSubtreeIfNeeded()
+        guard contentView.bounds.width > 0, contentView.bounds.height > 0,
+              let bitmap = contentView.bitmapImageRepForCachingDisplay(in: contentView.bounds) else { return nil }
+        contentView.cacheDisplay(in: contentView.bounds, to: bitmap)
+        return bitmap.cgImage
+    }
+
+    @discardableResult
+    func stopAnimation() -> NSRect? {
+        let current = snapshotLayer.superlayer == nil ? nil :
+            (snapshotLayer.presentation()?.frame ?? snapshotLayer.frame)
+        animationGeneration += 1
+        animationCompletion = nil
+        animationSize = nil
+        snapshotLayer.removeAllAnimations()
+        snapshotLayer.removeFromSuperlayer()
+        snapshotLayer.contents = nil
+        contentView.isHidden = false
+        return current
+    }
+
+    func animateSnapshot(_ image: CGImage, from start: NSRect, to end: NSRect, completion: @escaping () -> Void) {
+        guard let layer, start.width > 0, start.height > 0, end.width > 0, end.height > 0 else {
+            completion()
+            return
+        }
+        animationGeneration += 1
+        let generation = animationGeneration
+        animationCompletion = completion
+        animationSize = bounds.size
+
+        let size = spring(keyPath: "bounds")
+        size.fromValue = NSValue(rect: NSRect(origin: .zero, size: start.size))
+        size.toValue = NSValue(rect: NSRect(origin: .zero, size: end.size))
+        let position = spring(keyPath: "position")
+        position.fromValue = NSValue(point: NSPoint(x: start.midX, y: start.midY))
+        position.toValue = NSValue(point: NSPoint(x: end.midX, y: end.midY))
+        let animation = CAAnimationGroup()
+        animation.animations = [size, position]
+        animation.duration = max(size.duration, position.duration)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        CATransaction.setCompletionBlock { [weak self] in
+            guard let self, self.animationGeneration == generation else { return }
+            completion()
+        }
+        snapshotLayer.contents = image
+        snapshotLayer.contentsScale = window?.backingScaleFactor ?? 1
+        snapshotLayer.frame = end
+        layer.addSublayer(snapshotLayer)
+        snapshotLayer.add(animation, forKey: "sidebarZoom")
+        CATransaction.commit()
+    }
+
+    private func spring(keyPath: String) -> CASpringAnimation {
+        let spring = CASpringAnimation(keyPath: keyPath)
+        let angularFrequency = 2 * CGFloat.pi / 0.38
+        spring.mass = 1
+        spring.stiffness = angularFrequency * angularFrequency
+        spring.damping = 2 * 0.9 * angularFrequency
+        spring.duration = spring.settlingDuration
+        return spring
     }
 }
 
@@ -336,6 +401,8 @@ private final class SidebarColumn: NSView {
         self.hostingView = NSHostingView(rootView: SidebarColumnView(edge: edge, sidebars: sidebars))
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.masksToBounds = true
 
         // The panel is sized only by these constraints, never by its SwiftUI content,
         // which would otherwise fight the closed sidebar's zero width.
@@ -417,6 +484,10 @@ private final class SidebarColumn: NSView {
         guard hostingView.superview !== self else { return }
         moveContent(into: self)
         handle.isHidden = false
+    }
+
+    func setContentVisible(_ visible: Bool) {
+        hostingView.isHidden = !visible
     }
 
     func containsContent(_ responder: NSView) -> Bool {
