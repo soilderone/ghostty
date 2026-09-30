@@ -82,8 +82,9 @@ Ghostty 已经把每个终端的 pwd（OSC 7）传到了 Swift 层。
 - 实现：`TerminalViewContainer` 里用 Auto Layout 把两个侧栏（各自一个 NSHostingView）排在
   终端视图两侧，`TerminalView.swift` 不动。侧栏内侧边缘 5pt 可拖动调宽度（最小 160pt，
   双击恢复 260pt），宽度全局记住；窗口太窄时先压缩侧栏，终端区至少保留 160pt。开关不做动画。
-- Files/Git 放大与还原覆盖窗口内容区，但保留标题栏和工具栏；内容按最终尺寸布局一次，
-  面板整体从侧栏位置以和终端相同的弹簧节奏过渡。减少动态效果时直接切换。
+- Files/Git 放大后与终端一样居中浮在内容区上方，约占 95%、四周留边并带阴影；底下的终端布局不动，
+  遮罩压暗背景，点击遮罩或按 Esc 还原。标题栏和工具栏仍可用。真实内容按目标尺寸布局，
+  弹簧动画只缩放临时快照，结束即释放；减少动态效果时直接切换。
 - cwd：`BaseTerminalController.focusedSurface` 是最后一个获得焦点的终端，焦点移到侧栏时不会变空。
   控制器订阅它的 `pwd`，写进每个窗口的 `TerminalSidebars.directory`。空的 OSC 7 按"没有目录"
   处理；ssh 到远程时核心会丢弃远程的 OSC 7，目录停在 ssh 之前的本地目录。
