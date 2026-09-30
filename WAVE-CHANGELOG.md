@@ -61,7 +61,11 @@
   - 文件树用真实的 `NSOutlineView` 验证节点修剪不影响展开状态和节点身份。
   - 套接字清理：不应答的连接最多等约 1 秒，目录被删除，退出通知会触发。
 - 对照测试：History 里去掉"重置时结束 git"，对应用例会失败。
-- 本机没有 SwiftLint，`--strict` 待 CI。
+- SwiftLint：CI（run 36597332670，提交 `961514a`）的 `swiftlint check` 失败，是这一轮引入的 3 处
+  `optional_data_string_conversion`（`String(decoding:as:)` 用在 `Data` 上：`FileQuickOpen` 1 处、`GitLogStream` 2 处），
+  已在 `ba7ce8e` 改为仓库里现成的 `Data.lossyUTF8String`（对非法字节的修复与原来一致，10 万条路径多花约 4 ms）。
+  之后在本机用 SwiftLint 0.65.1 的免安装二进制（放在临时目录，用 `TOOLCHAIN_DIR` 指向 Command Line Tools）
+  跑 `swiftlint lint --strict`：整个 `macos` 目录 0 违规。
 
 **没做 / 已知问题**
 
@@ -118,7 +122,7 @@
 - Git 轮询用真实的临时仓库，靠 `GIT_TRACE2_EVENT` 数 git 的调用次数和间隔：状态字母不变但内容变了、重新暂存同一文件、
   窗口失去 key 后不再运行、重新变为 key 立即刷新、切到非仓库目录再切回来，都符合预期。
 - 对照测试：故意让 diff 的文件戳失效，"内容变了但状态没变"的用例会失败；把排序的并列处理改错，排序对比会失败。
-- 本机没有 SwiftLint，`--strict` 待 CI。
+- SwiftLint：这一批没有违规。CI 那次失败的 3 处在上面「性能优化（续）」里，`ba7ce8e` 之后整个 `macos` 目录 `--strict` 0 违规。
 
 **行为上有变化的地方**
 
