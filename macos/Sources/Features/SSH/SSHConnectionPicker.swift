@@ -88,6 +88,7 @@ struct SSHConnectionPicker: View {
     @State private var configuredHosts: [String] = []
     @State private var recentHosts: [String] = []
     @State private var selectedIndex = 0
+    @State private var keyboardScrollRequest = 0
     @FocusState private var inputFocused: Bool
 
     private var query: String {
@@ -100,11 +101,10 @@ struct SSHConnectionPicker: View {
 
     private var configuredMatches: [String] {
         let recent = Set(recentHosts.map { $0.lowercased() })
-        let matches = configuredHosts.filter {
+        return configuredHosts.filter {
             !recent.contains($0.lowercased()) &&
                 (query.isEmpty || $0.localizedCaseInsensitiveContains(query))
         }
-        return Array(matches.prefix(query.isEmpty ? 6 : 30))
     }
 
     private var directDestination: String? {
@@ -128,8 +128,7 @@ struct SSHConnectionPicker: View {
     private var listHeight: CGFloat {
         let sections = [!recentMatches.isEmpty, !configuredMatches.isEmpty, directDestination != nil]
             .filter { $0 }.count
-        let overflowHint = query.isEmpty && configuredHosts.count > configuredMatches.count ? 26 : 0
-        let contentHeight = rows.isEmpty ? 78 : rows.count * 30 + sections * 22 + overflowHint + 12
+        let contentHeight = rows.isEmpty ? 78 : rows.count * 30 + sections * 22 + 12
         return CGFloat(min(contentHeight, 250))
     }
 
@@ -199,13 +198,6 @@ struct SSHConnectionPicker: View {
                             ForEach(configuredMatches, id: \.self) { name in
                                 connectionRow(name, symbol: "network", label: name)
                             }
-                            if query.isEmpty && configuredHosts.count > configuredMatches.count {
-                                Text("Type to search all \(configuredHosts.count) configured hosts")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(Color(nsColor: ChromePalette.tertiaryText))
-                                    .padding(.horizontal, 9)
-                                    .padding(.vertical, 4)
-                            }
                         }
                         if let directDestination {
                             sectionTitle("NEW CONNECTION")
@@ -231,8 +223,13 @@ struct SSHConnectionPicker: View {
                     .padding(6)
                 }
                 .frame(height: listHeight)
-                .onChange(of: selectedIndex) { _ in
+                // Hovering a row must not scroll it back under the pointer while the user
+                // scrolls the list. Only keyboard navigation asks to reveal a selection.
+                .onChange(of: keyboardScrollRequest) { _ in
                     if let selectedName { proxy.scrollTo(selectedName, anchor: .center) }
+                }
+                .onChange(of: input) { _ in
+                    if let first = rows.first { proxy.scrollTo(first, anchor: .top) }
                 }
             }
 
@@ -315,6 +312,7 @@ struct SSHConnectionPicker: View {
     private func moveSelection(_ step: Int) {
         guard !rows.isEmpty else { return }
         selectedIndex = max(0, min(selectedIndex + step, rows.count - 1))
+        keyboardScrollRequest += 1
     }
 
     private func connectSelected() {
